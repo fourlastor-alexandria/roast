@@ -1,0 +1,29 @@
+name: Distribution Builds
+
+on:
+  # Manual dispatch for testing
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ windows-latest ]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build --release
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        # with:
+          # files: ${{ matrix.releaseFiles }}
+      # - name: Artifact upload
+      #   uses: actions/upload-artifact@v3
+      #   # Enable to check run output, keep disabled as it takes a lot of space and time
+      #   if: false
+      #   with:
+      #     name: outputs
+      #     path: jpackage/out
+      #     retention-days: 1
