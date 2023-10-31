@@ -1,23 +1,23 @@
 use jni::{
     errors::StartJvmResult,
-    objects::{JObjectArray, JString},
+    objects::JString,
     InitArgsBuilder, JNIVersion, JavaVM,
 };
 use std::{env, path::PathBuf};
 
 // Picks discrete GPU on Windows, if possible
 #[allow(non_upper_case_globals)]
-#[cfg(target_env = "msvc")]
+#[cfg(target_os = "windows")]
 #[no_mangle]
 pub static NvOptimusEnablement: u32 = 0x00000001;
 
 #[allow(non_upper_case_globals)]
-#[cfg(target_env = "msvc")]
+#[cfg(target_os = "windows")]
 #[no_mangle]
 pub static AmdPowerXpressRequestHighPerformance: u32 = 0x00000001;
 
 fn start_jvm(
-    jvm_location: &str,
+    jvm_location: &PathBuf,
     jar_file: &str,
     main_class: &str,
     args: Vec<String>,
@@ -32,9 +32,9 @@ fn start_jvm(
 
     // Create a new VM
     let jvm = JavaVM::with_libjvm(jvm_args, || {
-        Ok([jvm_location, java_locator::get_jvm_dyn_lib_file_name()]
-            .iter()
-            .collect::<PathBuf>())
+        Ok(jvm_location
+            .as_path()
+            .join(java_locator::get_jvm_dyn_lib_file_name()))
     })?;
 
     let mut env = jvm.attach_current_thread()?;
@@ -65,15 +65,20 @@ fn start_jvm(
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+const JVM_LOCATION: [&str; 3] = ["jdk", "bin", "server"];
+#[cfg(target_os = "macos")]
+const JVM_LOCATION: [&str; 5] = ["jdk", "Contents", "Home", "lib", "server"];
+#[cfg(target_os = "linux")]
+const JVM_LOCATION: [&str; 3] = ["jdk", "lib", "server"];
+
 fn main() -> StartJvmResult<()> {
     let args: Vec<String> = env::args().collect();
-    // jvm_location is different between platforms
-    // app-image/lib/server on linux
-    // app-image/bin/server on windows
+    let jvm_location = JVM_LOCATION.iter().collect::<PathBuf>();
     return start_jvm(
-        "app-image/bin/server",
-        "pokewilds.jar",
-        "com/pkmngen/game/desktop/DesktopLauncher",
+        &jvm_location,
+        "game.jar",
+        "io/github/fourlastor/gdx/Main",
         args,
     );
 }
