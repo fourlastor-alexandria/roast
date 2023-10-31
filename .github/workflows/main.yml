@@ -19,11 +19,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         # with:
           # files: ${{ matrix.releaseFiles }}
-      # - name: Artifact upload
-      #   uses: actions/upload-artifact@v3
+      - name: Artifact upload
+        uses: actions/upload-artifact@v3
       #   # Enable to check run output, keep disabled as it takes a lot of space and time
       #   if: false
-      #   with:
-      #     name: outputs
-      #     path: jpackage/out
-      #     retention-days: 1
+        with:
+          name: outputs
+          path: target/release
+          retention-days: 1
