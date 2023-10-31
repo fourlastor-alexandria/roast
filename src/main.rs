@@ -9,12 +9,12 @@ use std::{env, path::PathBuf};
 #[allow(non_upper_case_globals)]
 #[cfg(target_os = "windows")]
 #[no_mangle]
-pub static NvOptimusEnablement: u32 = 0x00000001;
+pub static NvOptimusEnablement: std::os::raw::c_ulong = 0x00000001;
 
 #[allow(non_upper_case_globals)]
 #[cfg(target_os = "windows")]
 #[no_mangle]
-pub static AmdPowerXpressRequestHighPerformance: u32 = 0x00000001;
+pub static AmdPowerXpressRequestHighPerformance: std::os::raw::c_int = 1;
 
 fn start_jvm(
     jvm_location: &PathBuf,
