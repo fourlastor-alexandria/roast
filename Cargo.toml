@@ -1,0 +1,8 @@
+[package]
+name = "launcher-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+java-locator = "0.1.5"
+jni = { version = "0.21.1", features = ["invocation"] }
