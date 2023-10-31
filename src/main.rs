@@ -6,10 +6,12 @@ use jni::{
 use std::{env, path::PathBuf};
 
 // Picks discrete GPU on Windows, if possible
+#[allow(non_upper_case_globals)]
 #[cfg(target_env = "msvc")]
 #[no_mangle]
 pub static NvOptimusEnablement: u32 = 0x00000001;
 
+#[allow(non_upper_case_globals)]
 #[cfg(target_env = "msvc")]
 #[no_mangle]
 pub static AmdPowerXpressRequestHighPerformance: u32 = 0x00000001;
