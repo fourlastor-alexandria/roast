@@ -49,11 +49,10 @@ fn start_jvm(
     let method_args = env
         .new_object_array(args.len() as i32, "java/lang/String", initial_value)
         .unwrap();
-    let mutable_args: &JObjectArray = method_args.as_ref();
     let mut i = 0;
     for argument in jstrings {
         // let value = env.new_string(argument);
-        let _ = env.set_object_array_element(mutable_args, i, argument);
+        let _ = env.set_object_array_element(&method_args, i, argument);
         i = i + 1;
     }
     env.call_static_method(
