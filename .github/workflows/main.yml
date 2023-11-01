@@ -9,25 +9,36 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ windows-latest, macos-latest ]
+        os: [ windows-latest, macos-latest, ubuntu-latest ]
     steps:
       - uses: actions/checkout@v3
-      - name: Build
-        run: cargo build --release
-      - name: Add arm binaries
+      - name: Build Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo build --release
+          mkdir out
+          copy target/release/roast.exe out/roast-windows.exe
+      - name: Build MacOS
         if: matrix.os == 'macos-latest'
         run: |
           rustup target add aarch64-apple-darwin
+          cargo build --release
           cargo build --target aarch64-apple-darwin --release
-        # with:
-          # files: ${{ matrix.releaseFiles }}
+          mkdir -p out
+          cp target/release/roast out/roast-macos-x86_64
+          cp target/aarch64-apple-darwin/release/roast out/roast-macos-aarch64
+      - name: Build Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          rustup target add aarch64-unknown-linux-gnu
+          cargo build --release
+          cargo build --target aarch64-unknown-linux-gnu --release
+          mkdir -p out
+          cp target/release/roast out/roast-linux-x86_64
+          cp target/aarch64-unknown-linux-gnu/release/roast out/roast-linux-aarch64
       - name: Artifact upload
         uses: actions/upload-artifact@v3
-      #   # Enable to check run output, keep disabled as it takes a lot of space and time
-      #   if: false
         with:
           name: outputs
-          path: |
-            target/release
-            target/aarch64-apple-darwin/release
+          path: out
           retention-days: 1
