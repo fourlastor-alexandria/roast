@@ -9,14 +9,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ windows-latest ]
+        os: [ windows-latest, macos-latest ]
     steps:
       - uses: actions/checkout@v3
       - name: Build
         run: cargo build --release
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Add arm binaries
+        if: matrix.os == 'macos-latest'
+        run: |
+          rustup target add aarch64-apple-darwin
+          cargo build --target aarch64-apple-darwin --release
         # with:
           # files: ${{ matrix.releaseFiles }}
       - name: Artifact upload
@@ -25,5 +27,7 @@ jobs:
       #   if: false
         with:
           name: outputs
-          path: target/release
+          path: |
+            target/release
+            target/aarch64-apple-darwin/release
           retention-days: 1
