@@ -60,7 +60,7 @@ fn start_jvm(
     .expect("Failed to create a new JavaVM");
 
     let mut env = jvm
-        .attach_current_thread()
+        .attach_current_thread_permanently()
         .expect("Failed to attach the current thread");
 
     let jstrings: Vec<JString> = args
