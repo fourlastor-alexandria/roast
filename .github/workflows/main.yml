@@ -1,6 +1,7 @@
 name: Distribution Builds
 
 on:
+  push:
   # Manual dispatch for testing
   workflow_dispatch:
 
