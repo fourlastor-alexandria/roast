@@ -1,6 +1,6 @@
 use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
-use std::{env, fs, path::PathBuf, panic};
+use std::{env, fs, path::PathBuf};
 
 #[allow(non_snake_case)]
 #[derive(Deserialize)]
@@ -96,16 +96,11 @@ fn main() {
     let config_file_path = current_location.join("config.json");
     let data = fs::read_to_string(config_file_path).expect("Unable to read config file");
     let config: Config = serde_json::from_str(&data).expect("Invalid config json");
-    let result = panic::catch_unwind(|| {
-        start_jvm(
-            &jvm_location,
-            config.classPath,
-            &config.mainClass.replace(".", "/"),
-            config.vmArgs,
-            args,
-        );
-    });
-    if result.is_err() {
-        println!("Failed because {:?}", result)
-    }
+    start_jvm(
+        &jvm_location,
+        config.classPath,
+        &config.mainClass.replace(".", "/"),
+        config.vmArgs,
+        args,
+    );
 }
