@@ -89,8 +89,11 @@ fn start_jvm(
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let jvm_location = JVM_LOCATION.iter().collect::<PathBuf>();
-    let config_file_path = "./config.json";
+    let current_exe = env::current_exe()
+        .expect("Failed to get current exe location");
+    let current_location = current_exe.parent().expect("Exe must be in a directory");
+    let jvm_location = current_location.join(JVM_LOCATION.iter().collect::<PathBuf>());
+    let config_file_path = current_location.join("config.json");
     let data = fs::read_to_string(config_file_path).expect("Unable to read config file");
     let config: Config = serde_json::from_str(&data).expect("Invalid config json");
     start_jvm(
