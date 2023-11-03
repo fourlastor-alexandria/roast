@@ -10,7 +10,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ macos-latest, ubuntu-latest ]
+        os: [ windows-latest, macos-latest, ubuntu-latest ]
     steps:
       - uses: actions/checkout@v3
       - name: Build Windows
@@ -25,13 +25,9 @@ jobs:
           rustup target add aarch64-apple-darwin
           cargo build --release
           cargo build --target aarch64-apple-darwin --release
-          cargo build
-          cargo build --target aarch64-apple-darwin
           mkdir -p out
           cp target/release/roast out/roast-macos-x86_64
           cp target/aarch64-apple-darwin/release/roast out/roast-macos-aarch64
-          cp target/debug/roast out/roast-macos-x86_64-debug
-          cp target/aarch64-apple-darwin/debug/roast out/roast-macos-aarch64-debug
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
