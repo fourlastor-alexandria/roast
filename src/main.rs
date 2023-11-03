@@ -1,4 +1,4 @@
-use jni::{objects::{JString, JValue}, InitArgsBuilder, JNIVersion, JavaVM};
+use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
 use std::{env, fs, path::PathBuf};
 
@@ -42,7 +42,10 @@ fn start_jvm(
 ) {
     let mut args_builder = InitArgsBuilder::new()
         .version(JNIVersion::V8)
-        .option(format!("-Djava.class.path={}", class_path.join(CLASS_PATH_DELIMITER)));
+        .option(format!(
+            "-Djava.class.path={}",
+            class_path.join(CLASS_PATH_DELIMITER)
+        ));
 
     for arg in vm_args {
         args_builder = args_builder.option(arg);
@@ -84,29 +87,39 @@ fn start_jvm(
         "main",
         "([Ljava/lang/String;)V",
         &[(&method_args).into()],
-    ).expect("Failed to call main method");
+    )
+    .expect("Failed to call main method");
 
-    let exception_occurred = env.exception_check().expect("Failed to check for exception");
+    let exception_occurred = env
+        .exception_check()
+        .expect("Failed to check for exception");
     if exception_occurred {
-        let exception = env.exception_occurred().expect("Failed to retrieve occurred exception");
+        let exception = env
+            .exception_occurred()
+            .expect("Failed to retrieve occurred exception");
         // Thread thread = Thread.currentThread();
-        let thread_class = env.find_class("java/lang/Thread").expect("Failed to retrieve thread class");
-        let current_thread = env.call_static_method(thread_class, "currentThread", "()Ljava/lang/Thread;", &[]).expect("Failed to get current thread");
+        let thread_class = env
+            .find_class("java/lang/Thread")
+            .expect("Failed to retrieve thread class");
+        let current_thread = env
+            .call_static_method(thread_class, "currentThread", "()Ljava/lang/Thread;", &[])
+            .expect("Failed to get current thread");
         // call java.lang.Thread#dispatchUncaughtException(Throwable)
         env.call_method(
             current_thread.l().unwrap(),
-             "dispatchUncaughtException",
-              "(Ljava/lang/Throwable;)V",
-               &[(&exception).into()]
-        ).expect("Failed to dispatch uncaught exception");
-        env.exception_clear().expect("Failed to clear the exception")
+            "dispatchUncaughtException",
+            "(Ljava/lang/Throwable;)V",
+            &[(&exception).into()],
+        )
+        .expect("Failed to dispatch uncaught exception");
+        env.exception_clear()
+            .expect("Failed to clear the exception")
     }
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let current_exe = env::current_exe()
-        .expect("Failed to get current exe location");
+    let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
     let jvm_location = current_location.join(JVM_LOCATION.iter().collect::<PathBuf>());
     let config_file_path = current_location.join("config.json");
