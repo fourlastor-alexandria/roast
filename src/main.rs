@@ -1,4 +1,4 @@
-use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
+use jni::{objects::{JString, JValue}, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
 use std::{env, fs, path::PathBuf};
 
@@ -85,6 +85,22 @@ fn start_jvm(
         "([Ljava/lang/String;)V",
         &[(&method_args).into()],
     ).expect("Failed to call main method");
+
+    let exception_occurred = env.exception_check().expect("Failed to check for exception");
+    if exception_occurred {
+        let exception = env.exception_occurred().expect("Failed to retrieve occurred exception");
+        // Thread thread = Thread.currentThread();
+        let thread_class = env.find_class("java/lang/Thread").expect("Failed to retrieve thread class");
+        let current_thread = env.call_static_method(thread_class, "currentThread", "()Ljava/lang/Thread;", &[]).expect("Failed to get current thread");
+        // call java.lang.Thread#dispatchUncaughtException(Throwable)
+        env.call_method(
+            current_thread.l().unwrap(),
+             "dispatchUncaughtException",
+              "(Ljava/lang/Throwable;)V",
+               &[(&exception).into()]
+        ).expect("Failed to dispatch uncaught exception");
+        env.exception_clear().expect("Failed to clear the exception")
+    }
 }
 
 fn main() {
