@@ -1,6 +1,6 @@
 use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, path::{PathBuf, Path}};
 
 #[allow(non_snake_case)]
 #[derive(Deserialize)]
@@ -34,7 +34,7 @@ const JVM_LOCATION: [&str; 5] = ["jdk", "Contents", "Home", "lib", "server"];
 const JVM_LOCATION: [&str; 3] = ["jdk", "lib", "server"];
 
 fn start_jvm(
-    jvm_location: &PathBuf,
+    jvm_location: &Path,
     class_path: Vec<String>,
     main_class: &str,
     vm_args: Vec<String>,
@@ -54,16 +54,13 @@ fn start_jvm(
     // Build the VM properties
     let jvm_args = args_builder.build().expect("Failed to buid VM properties");
 
+    append_library_paths(jvm_location);
     // Create a new VM
-    let jvm = JavaVM::with_libjvm(jvm_args, || {
-        Ok(jvm_location
-            .as_path()
-            .join(java_locator::get_jvm_dyn_lib_file_name()))
-    })
-    .expect("Failed to create a new JavaVM");
+    let jvm = JavaVM::new(jvm_args)
+        .expect("Failed to create a new JavaVM");
 
     let mut env = jvm
-        .attach_current_thread_permanently()
+        .attach_current_thread()
         .expect("Failed to attach the current thread");
 
     let jstrings: Vec<JString> = args
@@ -116,6 +113,29 @@ fn start_jvm(
             .expect("Failed to clear the exception")
     }
 }
+
+fn append_library_paths(jvm_location: &Path) {
+    let jvm_location_str = jvm_location.to_str().unwrap();
+    env::set_var("JAVA_HOME", jvm_location_str);
+    append_library_paths_os(jvm_location_str);
+}
+
+#[cfg(target_os = "windows")]
+fn append_library_paths_os(jvm_location: &str) {
+    // TODO: On Windows, append the path to $JAVA_HOME/bin to the PATH environment variable.
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn append_library_paths_os(jvm_location: &str) {
+    let lib_path = env::var("LD_LIBRARY_PATH").unwrap_or("".to_string());
+    if lib_path.is_empty() {
+        env::set_var("LD_LIBRARY_PATH", jvm_location);
+    } else {
+        env::set_var("LD_LIBRARY_PATH", lib_path + ":" + jvm_location);
+    }
+}
+
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
