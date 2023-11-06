@@ -31,6 +31,7 @@ jobs:
           mkdir -p out
           cp target/release/roast out/roast-macos-x86_64
           cp target/aarch64-apple-darwin/release/roast out/roast-macos-aarch64
+          chmod +x out/roast-macos-x86_64 out/roast-macos-aarch64
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -41,6 +42,7 @@ jobs:
           mkdir -p out
           cp target/release/roast out/roast-linux-x86_64
           cp target/aarch64-unknown-linux-gnu/release/roast out/roast-linux-aarch64
+          chmod +x out/roast-linux-x86_64 out/roast-linux-aarch64
       - name: Artifact upload
         uses: actions/upload-artifact@v3
         with:
