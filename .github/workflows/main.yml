@@ -16,9 +16,12 @@ jobs:
       - name: Build Windows
         if: matrix.os == 'windows-latest'
         run: |
+          rustup target add i686-pc-windows-msvc
           cargo build --release
+          cargo build --target i686-pc-windows-msvc --release
           mkdir out
-          copy target/release/roast.exe out/roast-windows.exe
+          copy target/release/roast.exe out/roast-win-64.exe
+          copy target/i686-pc-windows-msvc/release/roast.exe out/roast-win-32.exe
       - name: Build MacOS
         if: matrix.os == 'macos-latest'
         run: |
