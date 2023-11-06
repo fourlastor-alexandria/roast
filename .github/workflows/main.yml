@@ -20,8 +20,10 @@ jobs:
           cargo build --release
           cargo build --target i686-pc-windows-msvc --release
           mkdir out
-          copy target/release/roast.exe out/roast-win-64.exe
-          copy target/i686-pc-windows-msvc/release/roast.exe out/roast-win-32.exe
+          copy target/release/roast.exe target/release/roast-win-64.exe
+          copy target/i686-pc-windows-msvc/release/roast.exe target/i686-pc-windows-msvc/release/roast-win-32.exe
+          Compress-Archive -Path target/release/roast-win-64.exe -Destination out/roast-win-64.exe.zip
+          Compress-Archive -Path target/i686-pc-windows-msvc/release/roast-win-32.exe -Destination out/roast-win-32.exe.zip
       - name: Build MacOS
         if: matrix.os == 'macos-latest'
         run: |
@@ -29,9 +31,11 @@ jobs:
           cargo build --release
           cargo build --target aarch64-apple-darwin --release
           mkdir -p out
-          cp target/release/roast out/roast-macos-x86_64
-          cp target/aarch64-apple-darwin/release/roast out/roast-macos-aarch64
-          chmod +x out/roast-macos-x86_64 out/roast-macos-aarch64
+          mv target/release/roast target/release/roast-macos-x86_64
+          mv target/aarch64-apple-darwin/release/roast target/aarch64-apple-darwin/release/roast-macos-aarch64
+          chmod +x target/release/roast-macos-x86_64 target/aarch64-apple-darwin/release/roast-macos-aarch64
+          zip out/roast-macos-x86_64.zip target/release/roast-macos-x86_64
+          zip out/roast-macos-aarch64.zip target/aarch64-apple-darwin/release/roast-macos-aarch64
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -43,6 +47,11 @@ jobs:
           cp target/release/roast out/roast-linux-x86_64
           cp target/aarch64-unknown-linux-gnu/release/roast out/roast-linux-aarch64
           chmod +x out/roast-linux-x86_64 out/roast-linux-aarch64
+          mv target/release/roast target/release/roast-linux-x86_64
+          mv target/aarch64-unknown-linux-gnu/release/roast target/aarch64-unknown-linux-gnu/release/roast-linux-aarch64
+          chmod +x target/release/roast-linux-x86_64 target/aarch64-unknown-linux-gnu/release/roast-linux-aarch64
+          zip out/roast-linux-x86_64.zip target/release/roast-linux-x86_64
+          zip out/roast-linux-aarch64.zip target/aarch64-unknown-linux-gnu/release/roast-linux-aarch64
       - name: Artifact upload
         uses: actions/upload-artifact@v3
         with:
