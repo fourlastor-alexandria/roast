@@ -122,7 +122,7 @@ fn append_library_paths(jvm_location: &Path) {
 }
 
 #[cfg(target_os = "windows")]
-fn append_library_paths_os(jvm_location: &str) {
+fn append_library_paths_os(_jvm_location: &str) {
     // TODO: On Windows, append the path to $JAVA_HOME/bin to the PATH environment variable.
 }
 
