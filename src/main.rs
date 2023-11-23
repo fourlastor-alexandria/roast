@@ -148,7 +148,7 @@ fn append_library_paths_os(jvm_location: &str) {
 }
 
 #[cfg(target_os = "windows")]
-fn is_zgc_supported() {
+fn is_zgc_supported() -> bool {
     // TODO: depends on win version
     return false;
 }
