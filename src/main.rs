@@ -1,7 +1,10 @@
-#![cfg_attr(not(feature = "win_console"), windows_subsystem = "windows") ]
+#![cfg_attr(not(feature = "win_console"), windows_subsystem = "windows")]
 use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
-use std::{env, fs, path::{PathBuf, Path}};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 #[allow(non_snake_case)]
 #[derive(Deserialize)]
@@ -9,6 +12,7 @@ struct Config {
     classPath: Vec<String>,
     mainClass: String,
     vmArgs: Vec<String>,
+    useZgcIfSupportedOs: bool,
 }
 
 // Picks discrete GPU on Windows, if possible
@@ -39,6 +43,7 @@ fn start_jvm(
     class_path: Vec<String>,
     main_class: &str,
     vm_args: Vec<String>,
+    use_zgc_if_supported: bool,
     args: Vec<String>,
 ) {
     let mut args_builder = InitArgsBuilder::new()
@@ -53,13 +58,18 @@ fn start_jvm(
         args_builder = args_builder.option(arg);
     }
 
+    if use_zgc_if_supported && is_zgc_supported() {
+        args_builder = args_builder
+            .option("-XX:+UnlockExperimentalVMOptions")
+            .option("-XX:+UseZGC")
+    }
+
     // Build the VM properties
     let jvm_args = args_builder.build().expect("Failed to buid VM properties");
 
     append_library_paths(jvm_location);
     // Create a new VM
-    let jvm = JavaVM::new(jvm_args)
-        .expect("Failed to create a new JavaVM");
+    let jvm = JavaVM::new(jvm_args).expect("Failed to create a new JavaVM");
 
     let mut env = jvm
         .attach_current_thread()
@@ -137,7 +147,16 @@ fn append_library_paths_os(jvm_location: &str) {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn is_zgc_supported() {
+    // TODO: depends on win version
+    return false;
+}
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn is_zgc_supported() -> bool {
+    return true;
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -152,6 +171,7 @@ fn main() {
         config.classPath,
         &config.mainClass.replace(".", "/"),
         config.vmArgs,
+        config.useZgcIfSupportedOs,
         args,
     );
 }
