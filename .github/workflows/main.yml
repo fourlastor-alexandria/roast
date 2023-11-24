@@ -16,20 +16,27 @@ jobs:
       - name: Build Windows
         if: matrix.os == 'windows-latest'
         run: |
+          mkdir out
+          mkdir tmp_build
           rustup target add i686-pc-windows-msvc
           cargo build --release
           cargo build --target i686-pc-windows-msvc --release
-          mkdir out
-          copy target/release/roast.exe target/release/roast-win-64.exe
-          copy target/i686-pc-windows-msvc/release/roast.exe target/i686-pc-windows-msvc/release/roast-win-32.exe
+          copy target/release/roast.exe tmp_build/roast-win-64.exe
+          copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-32.exe
           cargo build --release --features win_console
           cargo build --target i686-pc-windows-msvc --release --features win_console
-          copy target/release/roast.exe target/release/roast-win-console-64.exe
-          copy target/i686-pc-windows-msvc/release/roast.exe target/i686-pc-windows-msvc/release/roast-win-console-32.exe
-          Compress-Archive -Path target/release/roast-win-64.exe -Destination out/roast-win-64.exe.zip
-          Compress-Archive -Path target/i686-pc-windows-msvc/release/roast-win-32.exe -Destination out/roast-win-32.exe.zip
-          Compress-Archive -Path target/release/roast-win-console-64.exe -Destination out/roast-win-console-64.exe.zip
-          Compress-Archive -Path target/i686-pc-windows-msvc/release/roast-win-console-32.exe -Destination out/roast-win-console-32.exe.zip
+          copy target/release/roast.exe tmp_build/roast-win-console-64.exe
+          copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-console-32.exe
+          cargo build --release --features win_no_gpu
+          cargo build --target i686-pc-windows-msvc --release --features win_no_gpu
+          copy target/release/roast.exe tmp_build/roast-win-no-gpu-64.exe
+          copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-no-gpu-32.exe
+          Compress-Archive -Path tmp_build/roast-win-64.exe -Destination out/roast-win-64.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-32.exe -Destination out/roast-win-32.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-console-64.exe -Destination out/roast-win-console-64.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-console-32.exe -Destination out/roast-win-console-32.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-no-gpu-64.exe -Destination out/roast-win-no-gpu-64.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-no-gpu-32.exe -Destination out/roast-win-no-gpu-32.exe.zip
       - name: Build MacOS
         if: matrix.os == 'macos-latest'
         run: |

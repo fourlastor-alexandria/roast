@@ -17,3 +17,4 @@ strip = true
 
 [features]
 win_console = []
+win_no_gpu = []
