@@ -30,7 +30,7 @@ static CLASS_PATH_DELIMITER: &str = ":";
 #[cfg(target_os = "windows")]
 const JVM_LOCATION: [&str; 3] = ["jdk", "bin", "server"];
 #[cfg(target_os = "macos")]
-const JVM_LOCATION: [&str; 5] = ["jdk", "Contents", "Home", "lib", "server"];
+const JVM_LOCATION: [&str; 3] = ["jdk", "lib", "server"];
 #[cfg(target_os = "linux")]
 const JVM_LOCATION: [&str; 3] = ["jdk", "lib", "server"];
 
