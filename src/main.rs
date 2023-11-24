@@ -147,9 +147,10 @@ fn main() {
     let config_file_path = current_location.join("config.json");
     let data = fs::read_to_string(config_file_path).expect("Unable to read config file");
     let config: Config = serde_json::from_str(&data).expect("Invalid config json");
+    let class_path: Vec<String> = config.classPath.into_iter().map(|it| current_location.join(it).into_os_string().into_string().unwrap()).collect();
     start_jvm(
         &jvm_location,
-        config.classPath,
+        class_path,
         &config.mainClass.replace(".", "/"),
         config.vmArgs,
         args,
