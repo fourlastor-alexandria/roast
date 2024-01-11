@@ -106,7 +106,7 @@ fn start_jvm(
     env.call_method(
         current_thread,
         "setContextClassLoader",
-        "(Ljava/lang/ClassLoader;)",
+        "(Ljava/lang/ClassLoader;)V",
         &[(&class_loader).into()],
     )
     .expect("Failed to set class loader");
