@@ -13,6 +13,7 @@ struct Config {
     mainClass: String,
     vmArgs: Vec<String>,
     useZgcIfSupportedOs: bool,
+    useMainAsContextClassLoader: bool,
 }
 
 // Picks discrete GPU on Windows, if possible
@@ -44,6 +45,7 @@ fn start_jvm(
     main_class_name: &str,
     vm_args: Vec<String>,
     use_zgc_if_supported: bool,
+    use_main_as_context_class_loader: bool,
     args: Vec<String>,
 ) {
     let mut args_builder = InitArgsBuilder::new()
@@ -75,41 +77,43 @@ fn start_jvm(
         .attach_current_thread()
         .expect("Failed to attach the current thread");
 
-    // Class mainClass = MainClass.class;
-    let main_class = env
-        .find_class(main_class_name)
-        .expect("Failed to get main class");
+    if use_main_as_context_class_loader {
+        // Class mainClass = MainClass.class;
+        let main_class = env
+            .find_class(main_class_name)
+            .expect("Failed to get main class");
 
-    // ClassLoader loader = mainClass.getClassLoader()
-    let class_loader = env
-        .call_method(
-            main_class,
-            "getClassLoader",
-            "()Ljava/lang/ClassLoader;",
-            &[],
+        // ClassLoader loader = mainClass.getClassLoader()
+        let class_loader = env
+            .call_method(
+                main_class,
+                "getClassLoader",
+                "()Ljava/lang/ClassLoader;",
+                &[],
+            )
+            .and_then(|it| it.l())
+            .expect("Failed to get class loader from main class");
+
+        // Thread thread = Thread.currentThread()
+        let current_thread = env
+            .call_static_method(
+                "java/lang/Thread",
+                "currentThread",
+                "()Ljava/lang/Thread;",
+                &[],
+            )
+            .and_then(|it| it.l())
+            .expect("Failed to get current thread");
+
+        // thread.setContextClassLoader(loader)
+        env.call_method(
+            current_thread,
+            "setContextClassLoader",
+            "(Ljava/lang/ClassLoader;)V",
+            &[(&class_loader).into()],
         )
-        .and_then(|it| it.l())
-        .expect("Failed to get class loader from main class");
-
-    // Thread thread = Thread.currentThread()
-    let current_thread = env
-        .call_static_method(
-            "java/lang/Thread",
-            "currentThread",
-            "()Ljava/lang/Thread;",
-            &[],
-        )
-        .and_then(|it| it.l())
-        .expect("Failed to get current thread");
-
-    // thread.setContextClassLoader(loader)
-    env.call_method(
-        current_thread,
-        "setContextClassLoader",
-        "(Ljava/lang/ClassLoader;)V",
-        &[(&class_loader).into()],
-    )
-    .expect("Failed to set class loader");
+        .expect("Failed to set class loader");
+    }
 
     let jstrings: Vec<JString> = args
         .iter()
@@ -221,6 +225,7 @@ fn main() {
         &config.mainClass.replace(".", "/"),
         config.vmArgs,
         config.useZgcIfSupportedOs,
+        config.useMainAsContextClassLoader,
         args,
     );
 }
