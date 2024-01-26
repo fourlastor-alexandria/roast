@@ -14,6 +14,7 @@ struct Config {
     vmArgs: Option<Vec<String>>,
     args: Option<Vec<String>>,
     useZgcIfSupportedOs: Option<bool>,
+    useMainAsContextClassLoader: Option<bool>,
 }
 
 impl Config {
@@ -24,6 +25,9 @@ impl Config {
             vmArgs: self.vmArgs.or(other.vmArgs),
             args: self.args.or(other.args),
             useZgcIfSupportedOs: self.useZgcIfSupportedOs.or(other.useZgcIfSupportedOs),
+            useMainAsContextClassLoader: self
+                .useMainAsContextClassLoader
+                .or(other.useMainAsContextClassLoader),
         }
     }
 }
@@ -54,10 +58,11 @@ const JVM_LOCATION: [&str; 3] = ["jdk", "lib", "server"];
 fn start_jvm(
     jvm_location: &Path,
     class_path: Vec<String>,
-    main_class: &str,
+    main_class_name: &str,
     vm_args: Vec<String>,
-    use_zgc_if_supported: bool,
     args: Vec<String>,
+    use_zgc_if_supported: bool,
+    use_main_as_context_class_loader: bool,
 ) {
     let mut args_builder = InitArgsBuilder::new()
         .version(JNIVersion::V8)
@@ -88,6 +93,44 @@ fn start_jvm(
         .attach_current_thread()
         .expect("Failed to attach the current thread");
 
+    if use_main_as_context_class_loader {
+        // Class mainClass = MainClass.class;
+        let main_class = env
+            .find_class(main_class_name)
+            .expect("Failed to get main class");
+
+        // ClassLoader loader = mainClass.getClassLoader()
+        let class_loader = env
+            .call_method(
+                main_class,
+                "getClassLoader",
+                "()Ljava/lang/ClassLoader;",
+                &[],
+            )
+            .and_then(|it| it.l())
+            .expect("Failed to get class loader from main class");
+
+        // Thread thread = Thread.currentThread()
+        let current_thread = env
+            .call_static_method(
+                "java/lang/Thread",
+                "currentThread",
+                "()Ljava/lang/Thread;",
+                &[],
+            )
+            .and_then(|it| it.l())
+            .expect("Failed to get current thread");
+
+        // thread.setContextClassLoader(loader)
+        env.call_method(
+            current_thread,
+            "setContextClassLoader",
+            "(Ljava/lang/ClassLoader;)V",
+            &[(&class_loader).into()],
+        )
+        .expect("Failed to set class loader");
+    }
+
     let jstrings: Vec<JString> = args
         .iter()
         .map(|s| env.new_string(s)) // Convert to JString (maybe)
@@ -105,7 +148,7 @@ fn start_jvm(
         i = i + 1;
     }
     env.call_static_method(
-        main_class,
+        main_class_name,
         "main",
         "([Ljava/lang/String;)V",
         &[(&method_args).into()],
@@ -185,9 +228,11 @@ fn main() {
     let current_location = current_exe.parent().expect("Exe must be in a directory");
     let jvm_location = current_location.join(JVM_LOCATION.iter().collect::<PathBuf>());
     let config_file_path = current_location.join("config.json");
-    let default_config: Config = read_config(config_file_path).expect("Unable to read config.json file");
+    let default_config: Config =
+        read_config(config_file_path).expect("Unable to read config.json file");
     let specific_config = read_config(current_exe.with_extension("json"));
-    let merged_config = specific_config.map_or(default_config.clone(), |it| it.merge_with(default_config));
+    let merged_config =
+        specific_config.map_or(default_config.clone(), |it| it.merge_with(default_config));
     let class_path: Vec<String> = merged_config
         .classPath
         .expect("Missing class path")
@@ -207,12 +252,16 @@ fn main() {
     let vm_args = merged_config.vmArgs.unwrap_or_else(|| Vec::new());
     let program_args = merged_config.args.unwrap_or_else(|| Vec::new());
     let use_zgc_if_supported = merged_config.useZgcIfSupportedOs.unwrap_or(false);
+    let use_main_as_context_class_loader =
+        merged_config.useMainAsContextClassLoader.unwrap_or(false);
+
     start_jvm(
         &jvm_location,
         class_path,
         main_class,
         vm_args,
-        use_zgc_if_supported,
         [args, program_args].concat(),
+        use_zgc_if_supported,
+        use_main_as_context_class_loader,
     );
 }

@@ -12,7 +12,7 @@ jobs:
       matrix:
         os: [ windows-latest, macos-latest, ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build Windows
         if: matrix.os == 'windows-latest'
         run: |
@@ -63,9 +63,9 @@ jobs:
           zip out/roast-linux-x86_64.zip ./roast-linux-x86_64
           zip out/roast-linux-aarch64.zip ./roast-linux-aarch64
       - name: Artifact upload
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: outputs
+          name: outputs-${{ matrix.os }}
           path: out
           retention-days: 1
       - name: Release
