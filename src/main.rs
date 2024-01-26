@@ -7,13 +7,29 @@ use std::{
 };
 
 #[allow(non_snake_case)]
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Config {
-    classPath: Vec<String>,
-    mainClass: String,
-    vmArgs: Vec<String>,
-    useZgcIfSupportedOs: bool,
-    useMainAsContextClassLoader: bool,
+    classPath: Option<Vec<String>>,
+    mainClass: Option<String>,
+    vmArgs: Option<Vec<String>>,
+    args: Option<Vec<String>>,
+    useZgcIfSupportedOs: Option<bool>,
+    useMainAsContextClassLoader: Option<bool>,
+}
+
+impl Config {
+    fn merge_with(self, other: Config) -> Self {
+        Self {
+            classPath: self.classPath.or(other.classPath),
+            mainClass: self.mainClass.or(other.mainClass),
+            vmArgs: self.vmArgs.or(other.vmArgs),
+            args: self.args.or(other.args),
+            useZgcIfSupportedOs: self.useZgcIfSupportedOs.or(other.useZgcIfSupportedOs),
+            useMainAsContextClassLoader: self
+                .useMainAsContextClassLoader
+                .or(other.useMainAsContextClassLoader),
+        }
+    }
 }
 
 // Picks discrete GPU on Windows, if possible
@@ -44,9 +60,9 @@ fn start_jvm(
     class_path: Vec<String>,
     main_class_name: &str,
     vm_args: Vec<String>,
+    args: Vec<String>,
     use_zgc_if_supported: bool,
     use_main_as_context_class_loader: bool,
-    args: Vec<String>,
 ) {
     let mut args_builder = InitArgsBuilder::new()
         .version(JNIVersion::V8)
@@ -200,16 +216,26 @@ fn is_zgc_supported() -> bool {
     return true;
 }
 
+fn read_config(path: PathBuf) -> Option<Config> {
+    return fs::read_to_string(path.clone())
+        .ok()
+        .and_then(|it| serde_json::from_str(&it).ok());
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
     let jvm_location = current_location.join(JVM_LOCATION.iter().collect::<PathBuf>());
     let config_file_path = current_location.join("config.json");
-    let data = fs::read_to_string(config_file_path).expect("Unable to read config file");
-    let config: Config = serde_json::from_str(&data).expect("Invalid config json");
-    let class_path: Vec<String> = config
+    let default_config: Config =
+        read_config(config_file_path).expect("Unable to read config.json file");
+    let specific_config = read_config(current_exe.with_extension("json"));
+    let merged_config =
+        specific_config.map_or(default_config.clone(), |it| it.merge_with(default_config));
+    let class_path: Vec<String> = merged_config
         .classPath
+        .expect("Missing class path")
         .into_iter()
         .map(|it| {
             current_location
@@ -219,13 +245,23 @@ fn main() {
                 .unwrap()
         })
         .collect();
+    let main_class = &merged_config
+        .mainClass
+        .expect("Missing main class")
+        .replace(".", "/");
+    let vm_args = merged_config.vmArgs.unwrap_or_else(|| Vec::new());
+    let program_args = merged_config.args.unwrap_or_else(|| Vec::new());
+    let use_zgc_if_supported = merged_config.useZgcIfSupportedOs.unwrap_or(false);
+    let use_main_as_context_class_loader =
+        merged_config.useMainAsContextClassLoader.unwrap_or(false);
+
     start_jvm(
         &jvm_location,
         class_path,
-        &config.mainClass.replace(".", "/"),
-        config.vmArgs,
-        config.useZgcIfSupportedOs,
-        config.useMainAsContextClassLoader,
-        args,
+        main_class,
+        vm_args,
+        [args, program_args].concat(),
+        use_zgc_if_supported,
+        use_main_as_context_class_loader,
     );
 }
