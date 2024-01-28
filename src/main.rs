@@ -16,17 +16,6 @@ struct Config {
     useMainAsContextClassLoader: bool,
 }
 
-// Picks discrete GPU on Windows, if possible
-#[allow(non_upper_case_globals)]
-#[cfg(target_os = "windows")]
-#[no_mangle]
-pub static NvOptimusEnablement: std::os::raw::c_ulong = 0x00000001;
-
-#[allow(non_upper_case_globals)]
-#[cfg(target_os = "windows")]
-#[no_mangle]
-pub static AmdPowerXpressRequestHighPerformance: std::os::raw::c_int = 1;
-
 #[cfg(target_os = "windows")]
 static CLASS_PATH_DELIMITER: &str = ";";
 #[cfg(any(target_os = "linux", target_os = "macos"))]
