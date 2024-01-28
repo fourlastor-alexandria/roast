@@ -189,10 +189,7 @@ fn append_library_paths_os(jvm_location: &str) {
 
 #[cfg(target_os = "windows")]
 fn is_zgc_supported() -> bool {
-    // Windows 10 1803 is required for ZGC, see https://wiki.openjdk.java.net/display/zgc/Main#Main-SupportedPlatforms
-    // Windows 10 1803 is build 17134.
-    use windows_version::OsVersion;
-    return OsVersion::current() >= OsVersion::new(10, 0, 0, 17134);
+    return false
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
