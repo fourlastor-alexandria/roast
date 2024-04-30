@@ -37,18 +37,35 @@ jobs:
           Compress-Archive -Path tmp_build/roast-win-console-32.exe -Destination out/roast-win-console-32.exe.zip
           Compress-Archive -Path tmp_build/roast-win-no-gpu-64.exe -Destination out/roast-win-no-gpu-64.exe.zip
           Compress-Archive -Path tmp_build/roast-win-no-gpu-32.exe -Destination out/roast-win-no-gpu-32.exe.zip
-      - name: Build MacOS
+      - name: Build MacOS (setup)
+        if: matrix.os == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin
+      - name: Build MacOS (x86_64)
+        if: matrix.os == 'macos-latest'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '10.12'
+        run: |
+          cargo build --release
+      - name: Build MacOS (aarch64)
+        if: matrix.os == 'macos-latest'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: |
+          cargo build --target aarch64-apple-darwin --release
+      - name: Build MacOS (release)
         if: matrix.os == 'macos-latest'
         run: |
-          rustup target add aarch64-apple-darwin
-          cargo build --release
-          cargo build --target aarch64-apple-darwin --release
           mkdir -p out
           mv target/release/roast ./roast-macos-x86_64
           mv target/aarch64-apple-darwin/release/roast ./roast-macos-aarch64
           chmod +x ./roast-macos-x86_64 ./roast-macos-aarch64
           zip out/roast-macos-x86_64.zip ./roast-macos-x86_64
           zip out/roast-macos-aarch64.zip ./roast-macos-aarch64
+      - name: Build MacOS (verify min version)
+        if: matrix.os == 'macos-latest'
+        run: |
+          otool -l ./roast-macos-x86_64 | rg LC_BUILD_VERSION -A4 | rg minos | sort | uniq -c
+          otool -l ./roast-macos-aarch64 | rg LC_BUILD_VERSION -A4 | rg minos | sort | uniq -c
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
