@@ -64,8 +64,8 @@ jobs:
       - name: Build MacOS (verify min version)
         if: matrix.os == 'macos-latest'
         run: |
-          otool -l ./roast-macos-x86_64 | rg LC_BUILD_VERSION -A4 | rg minos | sort | uniq -c
-          otool -l ./roast-macos-aarch64 | rg LC_BUILD_VERSION -A4 | rg minos | sort | uniq -c
+          otool -l ./roast-macos-x86_64 | fgrep LC_BUILD_VERSION -A4 | fgrep minos | sort | uniq -c
+          otool -l ./roast-macos-aarch64 | fgrep LC_BUILD_VERSION -A4 | fgrep minos | sort | uniq -c
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
