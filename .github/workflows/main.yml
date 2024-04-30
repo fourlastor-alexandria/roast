@@ -39,12 +39,14 @@ jobs:
           Compress-Archive -Path tmp_build/roast-win-no-gpu-32.exe -Destination out/roast-win-no-gpu-32.exe.zip
       - name: Build MacOS (setup)
         if: matrix.os == 'macos-latest'
-        run: rustup target add aarch64-apple-darwin
+        run: |
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
       - name: Build MacOS (x86_64)
         if: matrix.os == 'macos-latest'
         run: |
-          rustc --print deployment-target
-          cargo build --release
+          rustc --print deployment-target --target x86_64-apple-darwin
+          cargo build --target x86_64-apple-darwin --release
       - name: Build MacOS (aarch64)
         if: matrix.os == 'macos-latest'
         run: |
@@ -54,7 +56,7 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           mkdir -p out
-          mv target/release/roast ./roast-macos-x86_64
+          mv target/x86_64-apple-darwin/release/roast ./roast-macos-x86_64
           mv target/aarch64-apple-darwin/release/roast ./roast-macos-aarch64
           chmod +x ./roast-macos-x86_64 ./roast-macos-aarch64
           zip out/roast-macos-x86_64.zip ./roast-macos-x86_64
