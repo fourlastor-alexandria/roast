@@ -47,14 +47,12 @@ jobs:
         env:
           MACOSX_DEPLOYMENT_TARGET: '10.12'
         run: |
-          rustc --print deployment-target --target x86_64-apple-darwin
           cargo build --target x86_64-apple-darwin --release
       - name: Build MacOS (aarch64)
         if: matrix.os == 'macos-latest'
         env:
           MACOSX_DEPLOYMENT_TARGET: '11.0'
         run: |
-          rustc --print deployment-target --target aarch64-apple-darwin
           cargo build --target aarch64-apple-darwin --release
       - name: Build MacOS (release)
         if: matrix.os == 'macos-latest'
@@ -65,10 +63,6 @@ jobs:
           chmod +x ./roast-macos-x86_64 ./roast-macos-aarch64
           zip out/roast-macos-x86_64.zip ./roast-macos-x86_64
           zip out/roast-macos-aarch64.zip ./roast-macos-aarch64
-      - name: Build MacOS (verify min version)
-        if: matrix.os == 'macos-latest'
-        run: |
-          otool -l ./roast-macos-x86_64
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
