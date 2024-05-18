@@ -229,14 +229,11 @@ fn main() {
                 .unwrap()
         })
         .collect();
-    let main_class = &config
-        .mainClass
-        .replace(".", "/");
+    let main_class = &config.mainClass.replace(".", "/");
     let vm_args = config.vmArgs.unwrap_or_else(|| Vec::new());
     let program_args = config.args.unwrap_or_else(|| Vec::new());
     let use_zgc_if_supported = config.useZgcIfSupportedOs.unwrap_or(false);
-    let use_main_as_context_class_loader =
-        config.useMainAsContextClassLoader.unwrap_or(false);
+    let use_main_as_context_class_loader = config.useMainAsContextClassLoader.unwrap_or(false);
 
     start_jvm(
         &jvm_location,
