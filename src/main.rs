@@ -7,29 +7,14 @@ use std::{
 };
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize)]
 struct Config {
-    classPath: Option<Vec<String>>,
-    mainClass: Option<String>,
+    classPath: Vec<String>,
+    mainClass: String,
     vmArgs: Option<Vec<String>>,
     args: Option<Vec<String>>,
     useZgcIfSupportedOs: Option<bool>,
     useMainAsContextClassLoader: Option<bool>,
-}
-
-impl Config {
-    fn merge_with(self, other: Config) -> Self {
-        Self {
-            classPath: self.classPath.or(other.classPath),
-            mainClass: self.mainClass.or(other.mainClass),
-            vmArgs: self.vmArgs.or(other.vmArgs),
-            args: self.args.or(other.args),
-            useZgcIfSupportedOs: self.useZgcIfSupportedOs.or(other.useZgcIfSupportedOs),
-            useMainAsContextClassLoader: self
-                .useMainAsContextClassLoader
-                .or(other.useMainAsContextClassLoader),
-        }
-    }
 }
 
 // Picks discrete GPU on Windows, if possible
@@ -54,6 +39,8 @@ const JVM_LOCATION: [&str; 3] = ["jdk", "bin", "server"];
 const JVM_LOCATION: [&str; 3] = ["jdk", "lib", "server"];
 #[cfg(target_os = "linux")]
 const JVM_LOCATION: [&str; 3] = ["jdk", "lib", "server"];
+
+const APP_FOLDER: &str = "app";
 
 fn start_jvm(
     jvm_location: &Path,
@@ -227,15 +214,12 @@ fn main() {
     let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
     let jvm_location = current_location.join(JVM_LOCATION.iter().collect::<PathBuf>());
-    let config_file_path = current_location.join("config.json");
-    let default_config: Config =
-        read_config(config_file_path).expect("Unable to read config.json file");
-    let specific_config = read_config(current_exe.with_extension("json"));
-    let merged_config =
-        specific_config.map_or(default_config.clone(), |it| it.merge_with(default_config));
-    let class_path: Vec<String> = merged_config
+    let config_file_path = current_location
+        .join(APP_FOLDER)
+        .join(current_exe.with_extension("json"));
+    let config: Config = read_config(config_file_path).expect("Unable to read config file");
+    let class_path: Vec<String> = config
         .classPath
-        .expect("Missing class path")
         .into_iter()
         .map(|it| {
             current_location
@@ -245,15 +229,14 @@ fn main() {
                 .unwrap()
         })
         .collect();
-    let main_class = &merged_config
+    let main_class = &config
         .mainClass
-        .expect("Missing main class")
         .replace(".", "/");
-    let vm_args = merged_config.vmArgs.unwrap_or_else(|| Vec::new());
-    let program_args = merged_config.args.unwrap_or_else(|| Vec::new());
-    let use_zgc_if_supported = merged_config.useZgcIfSupportedOs.unwrap_or(false);
+    let vm_args = config.vmArgs.unwrap_or_else(|| Vec::new());
+    let program_args = config.args.unwrap_or_else(|| Vec::new());
+    let use_zgc_if_supported = config.useZgcIfSupportedOs.unwrap_or(false);
     let use_main_as_context_class_loader =
-        merged_config.useMainAsContextClassLoader.unwrap_or(false);
+        config.useMainAsContextClassLoader.unwrap_or(false);
 
     start_jvm(
         &jvm_location,
