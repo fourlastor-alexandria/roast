@@ -231,7 +231,7 @@ fn main() {
         .collect();
     let main_class = &config.mainClass.replace(".", "/");
     let vm_args = config.vmArgs.unwrap_or_else(|| Vec::new());
-    let program_args = config.args.unwrap_or_else(|| Vec::new());
+    let config_args = config.args.unwrap_or_else(|| Vec::new());
     let use_zgc_if_supported = config.useZgcIfSupportedOs.unwrap_or(false);
     let use_main_as_context_class_loader = config.useMainAsContextClassLoader.unwrap_or(false);
 
@@ -240,7 +240,7 @@ fn main() {
         class_path,
         main_class,
         vm_args,
-        [args, program_args].concat(),
+        [config_args, args].concat(),
         use_zgc_if_supported,
         use_main_as_context_class_loader,
     );
