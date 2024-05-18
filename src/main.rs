@@ -210,7 +210,7 @@ fn read_config(path: PathBuf) -> Option<Config> {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let cli_args: Vec<String> = env::args().skip(1).collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
     let jvm_location = current_location.join(JVM_LOCATION.iter().collect::<PathBuf>());
@@ -240,7 +240,7 @@ fn main() {
         class_path,
         main_class,
         vm_args,
-        [config_args, args].concat(),
+        [config_args, cli_args].concat(),
         use_zgc_if_supported,
         use_main_as_context_class_loader,
     );
