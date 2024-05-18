@@ -37,14 +37,28 @@ jobs:
           Compress-Archive -Path tmp_build/roast-win-console-32.exe -Destination out/roast-win-console-32.exe.zip
           Compress-Archive -Path tmp_build/roast-win-no-gpu-64.exe -Destination out/roast-win-no-gpu-64.exe.zip
           Compress-Archive -Path tmp_build/roast-win-no-gpu-32.exe -Destination out/roast-win-no-gpu-32.exe.zip
-      - name: Build MacOS
+      - name: Build MacOS (setup)
         if: matrix.os == 'macos-latest'
         run: |
+          rustup target add x86_64-apple-darwin
           rustup target add aarch64-apple-darwin
-          cargo build --release
+      - name: Build MacOS (x86_64)
+        if: matrix.os == 'macos-latest'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '10.12'
+        run: |
+          cargo build --target x86_64-apple-darwin --release
+      - name: Build MacOS (aarch64)
+        if: matrix.os == 'macos-latest'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: |
           cargo build --target aarch64-apple-darwin --release
+      - name: Build MacOS (release)
+        if: matrix.os == 'macos-latest'
+        run: |
           mkdir -p out
-          mv target/release/roast ./roast-macos-x86_64
+          mv target/x86_64-apple-darwin/release/roast ./roast-macos-x86_64
           mv target/aarch64-apple-darwin/release/roast ./roast-macos-aarch64
           chmod +x ./roast-macos-x86_64 ./roast-macos-aarch64
           zip out/roast-macos-x86_64.zip ./roast-macos-x86_64
@@ -69,7 +83,7 @@ jobs:
           path: out
           retention-days: 1
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: out/*
