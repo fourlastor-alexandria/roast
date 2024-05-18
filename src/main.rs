@@ -34,16 +34,16 @@ static CLASS_PATH_DELIMITER: &str = ";";
 static CLASS_PATH_DELIMITER: &str = ":";
 
 #[cfg(target_os = "windows")]
-const JVM_LOCATION: [&str; 3] = ["jdk", "bin", "server"];
+const RUNTIME_LOCATION: [&str; 3] = ["runtime", "bin", "server"];
 #[cfg(target_os = "macos")]
-const JVM_LOCATION: [&str; 3] = ["jdk", "lib", "server"];
+const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
 #[cfg(target_os = "linux")]
-const JVM_LOCATION: [&str; 3] = ["jdk", "lib", "server"];
+const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
 
 const APP_FOLDER: &str = "app";
 
 fn start_jvm(
-    jvm_location: &Path,
+    runtime_location: &Path,
     class_path: Vec<String>,
     main_class_name: &str,
     vm_args: Vec<String>,
@@ -72,7 +72,7 @@ fn start_jvm(
     // Build the VM properties
     let jvm_args = args_builder.build().expect("Failed to buid VM properties");
 
-    append_library_paths(jvm_location);
+    append_library_paths(runtime_location);
     // Create a new VM
     let jvm = JavaVM::new(jvm_args).expect("Failed to create a new JavaVM");
 
@@ -169,24 +169,24 @@ fn start_jvm(
     }
 }
 
-fn append_library_paths(jvm_location: &Path) {
-    let jvm_location_str = jvm_location.to_str().unwrap();
-    env::set_var("JAVA_HOME", jvm_location_str);
-    append_library_paths_os(jvm_location_str);
+fn append_library_paths(runtime_location: &Path) {
+    let runtime_location_str = runtime_location.to_str().unwrap();
+    env::set_var("JAVA_HOME", runtime_location_str);
+    append_library_paths_os(runtime_location_str);
 }
 
 #[cfg(target_os = "windows")]
-fn append_library_paths_os(_jvm_location: &str) {
+fn append_library_paths_os(_runtime_location: &str) {
     // TODO: On Windows, append the path to $JAVA_HOME/bin to the PATH environment variable.
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn append_library_paths_os(jvm_location: &str) {
+fn append_library_paths_os(runtime_location: &str) {
     let lib_path = env::var("LD_LIBRARY_PATH").unwrap_or("".to_string());
     if lib_path.is_empty() {
-        env::set_var("LD_LIBRARY_PATH", jvm_location);
+        env::set_var("LD_LIBRARY_PATH", runtime_location);
     } else {
-        env::set_var("LD_LIBRARY_PATH", lib_path + ":" + jvm_location);
+        env::set_var("LD_LIBRARY_PATH", lib_path + ":" + runtime_location);
     }
 }
 
@@ -213,11 +213,16 @@ fn main() {
     let cli_args: Vec<String> = env::args().skip(1).collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
-    let jvm_location = current_location.join(JVM_LOCATION.iter().collect::<PathBuf>());
+    let runtime_location = current_location.join(RUNTIME_LOCATION.iter().collect::<PathBuf>());
     let config_file_path = current_location
         .join(APP_FOLDER)
         .join(current_exe.with_extension("json").file_name().unwrap());
-    let config: Config = read_config(config_file_path).expect(&format!("Unable to read config file {}/{}/{}", current_location.to_string_lossy(), APP_FOLDER, current_exe.with_extension("json").to_string_lossy()));
+    let config: Config = read_config(config_file_path).expect(&format!(
+        "Unable to read config file {}/{}/{}",
+        current_location.to_string_lossy(),
+        APP_FOLDER,
+        current_exe.with_extension("json").to_string_lossy()
+    ));
     let class_path: Vec<String> = config
         .classPath
         .into_iter()
@@ -236,7 +241,7 @@ fn main() {
     let use_main_as_context_class_loader = config.useMainAsContextClassLoader.unwrap_or(false);
 
     start_jvm(
-        &jvm_location,
+        &runtime_location,
         class_path,
         main_class,
         vm_args,
