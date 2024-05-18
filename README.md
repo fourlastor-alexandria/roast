@@ -12,7 +12,7 @@ In addition to launching the JVM, it hints Windows systems with hybrid GPU setup
 
 ### Runtime
 
-A JDK/JRE, or a minimized image from `jlink`, in the `jdk` folder.
+A JDK/JRE, or a minimized image from `jlink`, in the `runtime` folder.
 
 ### JSON config file
 
