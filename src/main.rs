@@ -217,7 +217,7 @@ fn main() {
     let config_file_path = current_location
         .join(APP_FOLDER)
         .join(current_exe.with_extension("json"));
-    let config: Config = read_config(config_file_path).expect("Unable to read config file");
+    let config: Config = read_config(config_file_path).expect(&format!("Unable to read config file {}/{}/{}", current_location.to_string_lossy(), APP_FOLDER, current_exe.with_extension("json").to_string_lossy()));
     let class_path: Vec<String> = config
         .classPath
         .into_iter()
