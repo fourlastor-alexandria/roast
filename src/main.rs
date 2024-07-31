@@ -201,6 +201,7 @@ fn is_zgc_supported() -> bool {
 }
 
 fn main() {
+    env_logger::init();
     let args: Vec<String> = env::args().collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
