@@ -210,6 +210,7 @@ fn read_config(path: PathBuf) -> Option<Config> {
 }
 
 fn main() {
+    env_logger::init();
     let cli_args: Vec<String> = env::args().skip(1).collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
