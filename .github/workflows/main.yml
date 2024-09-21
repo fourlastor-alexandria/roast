@@ -66,13 +66,13 @@ jobs:
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
-          sudo apt install -y gcc-aarch64-linux-gnu
-          rustup target add aarch64-unknown-linux-gnu
-          cargo build --release
-          cargo build --target aarch64-unknown-linux-gnu --release
+          rustup target add x86_64-unknown-linux-musl
+          rustup target add aarch64-unknown-linux-musl
+          cargo build --target x86_64-unknown-linux-musl --release
+          cargo build --target aarch64-unknown-linux-musl --release
           mkdir -p out
-          mv target/release/roast ./roast-linux-x86_64
-          mv target/aarch64-unknown-linux-gnu/release/roast ./roast-linux-aarch64
+          mv target/x86_64-unknown-linux-musl/release/roast ./roast-linux-x86_64
+          mv target/aarch64-unknown-linux-musl/release/roast ./roast-linux-aarch64
           chmod +x ./roast-linux-x86_64 ./roast-linux-aarch64
           zip out/roast-linux-x86_64.zip ./roast-linux-x86_64
           zip out/roast-linux-aarch64.zip ./roast-linux-aarch64
