@@ -170,7 +170,7 @@ fn start_jvm(
     }
 }
 
-fn string_to_cow_cstr(s: String) -> Cow<CStr> {
+fn string_to_cow_cstr(s: String) -> Cow<'static, CStr> {
     let c_string = CString::new(s).expect("CString::new failed");
     Cow::Owned(c_string)
 }
