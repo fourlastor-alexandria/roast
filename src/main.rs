@@ -56,8 +56,7 @@ fn start_jvm(
         .option(format!(
             "-Djava.class.path={}",
             class_path.join(CLASS_PATH_DELIMITER)
-        ))
-        .option("-Xcheck:jni");
+        ));
 
     for arg in vm_args {
         args_builder = args_builder.option(arg);
