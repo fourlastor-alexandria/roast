@@ -5,6 +5,8 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
 };
+use std::borrow::Cow;
+use std::ffi::{CStr, CString};
 
 #[allow(non_snake_case)]
 #[derive(Deserialize)]
@@ -53,7 +55,7 @@ fn start_jvm(
 ) {
     let mut args_builder = InitArgsBuilder::new()
         .version(JNIVersion::V8)
-        .option_encoded(format!(
+        .option_encoded(string_to_cow_cstr(format!(
             "-Djava.class.path={}",
             class_path.join(CLASS_PATH_DELIMITER)
         ));
@@ -166,6 +168,11 @@ fn start_jvm(
         env.exception_clear()
             .expect("Failed to clear the exception")
     }
+}
+
+fn string_to_cow_cstr(s: String) -> Cow<CStr> {
+    let c_string = CString::new(s).expect("CString::new failed");
+    Cow::Owned(c_string)
 }
 
 fn append_library_paths(runtime_location: &Path) {
