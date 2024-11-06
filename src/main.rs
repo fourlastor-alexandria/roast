@@ -53,7 +53,7 @@ fn start_jvm(
 ) {
     let mut args_builder = InitArgsBuilder::new()
         .version(JNIVersion::V8)
-        .option(format!(
+        .option_encoded(format!(
             "-Djava.class.path={}",
             class_path.join(CLASS_PATH_DELIMITER)
         ));
