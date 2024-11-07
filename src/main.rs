@@ -1,6 +1,8 @@
 #![cfg_attr(not(feature = "win_console"), windows_subsystem = "windows")]
 use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
+use std::borrow::Cow;
+use std::ffi::{CStr, CString};
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -51,12 +53,14 @@ fn start_jvm(
     use_zgc_if_supported: bool,
     use_main_as_context_class_loader: bool,
 ) {
+    let java_path = &format!(
+        "-Djava.class.path={}",
+        class_path.join(CLASS_PATH_DELIMITER)
+    );
+
     let mut args_builder = InitArgsBuilder::new()
         .version(JNIVersion::V8)
-        .option(format!(
-            "-Djava.class.path={}",
-            class_path.join(CLASS_PATH_DELIMITER)
-        ));
+        .option_encoded(string_to_cow_cstr(java_path));
 
     for arg in vm_args {
         args_builder = args_builder.option(arg);
@@ -166,6 +170,11 @@ fn start_jvm(
         env.exception_clear()
             .expect("Failed to clear the exception")
     }
+}
+
+fn string_to_cow_cstr(s: &str) -> Cow<CStr> {
+    let c_string = CString::new(s).expect("CString::new failed");
+    Cow::Owned(c_string)
 }
 
 fn append_library_paths(runtime_location: &Path) {
