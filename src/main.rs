@@ -53,12 +53,14 @@ fn start_jvm(
     use_zgc_if_supported: bool,
     use_main_as_context_class_loader: bool,
 ) {
+    let java_path = &format!(
+        "-Djava.class.path={}",
+        class_path.join(CLASS_PATH_DELIMITER)
+    );
+
     let mut args_builder = InitArgsBuilder::new()
         .version(JNIVersion::V8)
-        .option_encoded(string_to_cow_cstr(format!(
-            "-Djava.class.path={}",
-            class_path.join(CLASS_PATH_DELIMITER)
-        ));
+        .option_encoded(string_to_cow_cstr(java_path));
 
     for arg in vm_args {
         args_builder = args_builder.option(arg);
@@ -170,7 +172,7 @@ fn start_jvm(
     }
 }
 
-fn string_to_cow_cstr(s: String) -> Cow<'static, CStr> {
+fn string_to_cow_cstr(s: &str) -> Cow<CStr> {
     let c_string = CString::new(s).expect("CString::new failed");
     Cow::Owned(c_string)
 }
