@@ -1,12 +1,12 @@
 #![cfg_attr(not(feature = "win_console"), windows_subsystem = "windows")]
 use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
+use std::borrow::Cow;
+use std::ffi::{CStr, CString};
 use std::{
     env, fs,
     path::{Path, PathBuf},
 };
-use std::borrow::Cow;
-use std::ffi::{CStr, CString};
 
 #[allow(non_snake_case)]
 #[derive(Deserialize)]
