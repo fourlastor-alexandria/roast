@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    thread,
 };
 
 #[allow(non_snake_case)]
@@ -208,7 +209,7 @@ fn read_config(path: PathBuf) -> Option<Config> {
         .and_then(|it| serde_json::from_str(&it).ok());
 }
 
-fn main() {
+fn parse_options_and_start() {
     env_logger::init();
     let cli_args: Vec<String> = env::args().skip(1).collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
@@ -249,4 +250,11 @@ fn main() {
         use_zgc_if_supported,
         use_main_as_context_class_loader,
     );
+}
+
+fn main() {
+    let thread_join_handle = thread::spawn(|| {
+        parse_options_and_start();
+    });
+    let _ = thread_join_handle.join();
 }
