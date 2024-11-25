@@ -72,9 +72,10 @@ fn start_jvm(
     // Build the VM properties
     let jvm_args = args_builder.build().expect("Failed to buid VM properties");
 
-    append_library_paths(runtime_location);
     // Create a new VM
-    let jvm = JavaVM::new(jvm_args).expect("Failed to create a new JavaVM");
+    let jvm = JavaVM::with_libjvm(jvm_args, || {
+        Ok(runtime_location.join(java_locator::get_jvm_dyn_lib_file_name()))
+    }).expect("Failed to create a new JavaVM");
 
     let mut env = jvm
         .attach_current_thread()
@@ -166,27 +167,6 @@ fn start_jvm(
         .expect("Failed to dispatch uncaught exception");
         env.exception_clear()
             .expect("Failed to clear the exception")
-    }
-}
-
-fn append_library_paths(runtime_location: &Path) {
-    let runtime_location_str = runtime_location.to_str().unwrap();
-    env::set_var("JAVA_HOME", runtime_location_str);
-    append_library_paths_os(runtime_location_str);
-}
-
-#[cfg(target_os = "windows")]
-fn append_library_paths_os(_runtime_location: &str) {
-    // TODO: On Windows, append the path to $JAVA_HOME/bin to the PATH environment variable.
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn append_library_paths_os(runtime_location: &str) {
-    let lib_path = env::var("LD_LIBRARY_PATH").unwrap_or("".to_string());
-    if lib_path.is_empty() {
-        env::set_var("LD_LIBRARY_PATH", runtime_location);
-    } else {
-        env::set_var("LD_LIBRARY_PATH", lib_path + ":" + runtime_location);
     }
 }
 
