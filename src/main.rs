@@ -233,7 +233,7 @@ fn parse_options_and_start() {
 }
 
 #[cfg(target_os = "macos")]
-unsafe fn park_event_loop() {
+fn park_event_loop() {
     use core_foundation::date::CFAbsoluteTime;
     use core_foundation::runloop::{
         kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopRunResult, CFRunLoopTimer, CFRunLoopTimerRef,
@@ -252,19 +252,21 @@ unsafe fn park_event_loop() {
         ptr::null_mut(),
     );
 
+    unsafe {
     // Add the timer to the current run loop in default mode
-    let current_run_loop = CFRunLoop::get_current();
-    current_run_loop.add_timer(&timer, kCFRunLoopDefaultMode);
+        let current_run_loop = CFRunLoop::get_current();
+        current_run_loop.add_timer(&timer, kCFRunLoopDefaultMode);
 
-    // Park the thread in the run loop
-    loop {
-        let result = CFRunLoop::run_in_mode(
-            kCFRunLoopDefaultMode,
-            Duration::from_secs_f64(1.0e20),
-            false,
-        );
-        if result == CFRunLoopRunResult::Finished {
-            break;
+        // Park the thread in the run loop
+        loop {
+            let result = CFRunLoop::run_in_mode(
+                kCFRunLoopDefaultMode,
+                Duration::from_secs_f64(1.0e20),
+                false,
+            );
+            if result == CFRunLoopRunResult::Finished {
+                break;
+            }
         }
     }
 }
@@ -273,7 +275,7 @@ unsafe fn park_event_loop() {
 fn maybe_run_in_thread() {
     use std::thread;
 
-    let thread_join_handle = thread::spawn(|| {
+    let _ = thread::spawn(|| {
         parse_options_and_start();
     });
     park_event_loop();
