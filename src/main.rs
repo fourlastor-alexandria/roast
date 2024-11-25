@@ -244,7 +244,7 @@ fn park_event_loop() {
 
     // Create a dummy timer with a far future fire time
     let timer = CFRunLoopTimer::new(
-        CFAbsoluteTime::from(1.0e20), // Fire time
+        CFAbsoluteTime::from(1.0e5), // Fire time
         0.0,                          // Interval
         0,                            // Flags
         0,                            // Order
@@ -261,7 +261,7 @@ fn park_event_loop() {
         loop {
             let result = CFRunLoop::run_in_mode(
                 kCFRunLoopDefaultMode,
-                Duration::from_secs_f64(1.0e20),
+                Duration::from_secs_f64(1.0e5),
                 false,
             );
             if result == CFRunLoopRunResult::Finished {
