@@ -74,7 +74,8 @@ fn start_jvm(
     // Create a new VM
     let jvm = JavaVM::with_libjvm(jvm_args, || {
         Ok(runtime_location.join(java_locator::get_jvm_dyn_lib_file_name()))
-    }).expect("Failed to create a new JavaVM");
+    })
+    .expect("Failed to create a new JavaVM");
 
     let mut env = jvm
         .attach_current_thread()
@@ -188,7 +189,7 @@ fn read_config(path: PathBuf) -> Option<Config> {
         .and_then(|it| serde_json::from_str(&it).ok());
 }
 
-fn main() {
+fn parse_options_and_start() {
     env_logger::init();
     let cli_args: Vec<String> = env::args().skip(1).collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
@@ -229,4 +230,62 @@ fn main() {
         use_zgc_if_supported,
         use_main_as_context_class_loader,
     );
+}
+
+#[cfg(target_os = "macos")]
+fn park_event_loop() {
+    use core_foundation::date::CFAbsoluteTime;
+    use core_foundation::runloop::{
+        kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopRunResult, CFRunLoopTimer, CFRunLoopTimerRef,
+    };
+    use std::{ffi::c_void, ptr, time::Duration};
+
+    extern "C" fn dummy_timer(_: CFRunLoopTimerRef, _: *mut c_void) {}
+
+    // Create a dummy timer with a far future fire time
+    let timer = CFRunLoopTimer::new(
+        CFAbsoluteTime::from(1.0e5), // Fire time
+        0.0,                          // Interval
+        0,                            // Flags
+        0,                            // Order
+        dummy_timer,                  // Dummy callback
+        ptr::null_mut(),
+    );
+
+    unsafe {
+    // Add the timer to the current run loop in default mode
+        let current_run_loop = CFRunLoop::get_current();
+        current_run_loop.add_timer(&timer, kCFRunLoopDefaultMode);
+
+        // Park the thread in the run loop
+        loop {
+            let result = CFRunLoop::run_in_mode(
+                kCFRunLoopDefaultMode,
+                Duration::from_secs_f64(1.0e5),
+                false,
+            );
+            if result == CFRunLoopRunResult::Finished {
+                break;
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn maybe_run_in_thread() {
+    use std::thread;
+
+    let _ = thread::spawn(|| {
+        parse_options_and_start();
+    });
+    park_event_loop();
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn maybe_run_in_thread() {
+    parse_options_and_start();
+}
+
+fn main() {
+    maybe_run_in_thread();
 }
