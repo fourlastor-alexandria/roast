@@ -28,6 +28,7 @@ The config file supports the following options:
 - `useMainAsContextClassLoader`: sets the main class as the main thread's [context class loader](https://docs.oracle.com/javase/8/docs/api/java/lang/Thread.html#getContextClassLoader--), defaults to false
 - `vmArgs`: arguments to pass to the java runtime, defaults to an empty array
 - `args`: arguments to the pass to main method, defaults to an empty array
+- `runOnFirstThread`: MacOS only, wether to run the JVM on the main thread, defaults to false
 
 For example:
 
@@ -38,6 +39,7 @@ For example:
   "useZgcIfSupportedOs": true,
   "useMainAsContextClassLoader": false,
   "vmArgs": ["-Xmx1G"],
-  "args": ["cli", "args"]
+  "args": ["cli", "args"],
+  "runOnFirstThread": true
 }
 ```
