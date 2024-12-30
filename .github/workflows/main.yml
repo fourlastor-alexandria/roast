@@ -23,30 +23,30 @@ jobs:
           cargo build --target x86_64-pc-windows-msvc --release
           cargo build --target aarch64-pc-windows-msvc --release
           cargo build --target i686-pc-windows-msvc --release
-          copy target/x86_64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-64.exe
+          copy target/x86_64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-x86_64.exe
           copy target/aarch64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-aarch64.exe
-          copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-32.exe
+          copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-i686.exe
           cargo build --target x86_64-pc-windows-msvc --release --features win_console
           cargo build --target aarch64-pc-windows-msvc --release --features win_console
           cargo build --target i686-pc-windows-msvc --release --features win_console
-          copy target/x86_64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-console-64.exe
+          copy target/x86_64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-console-x86_64.exe
           copy target/aarch64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-console-aarch64.exe
-          copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-console-32.exe
+          copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-console-i686.exe
           cargo build --target x86_64-pc-windows-msvc --release --features win_no_gpu
           cargo build --target aarch64-pc-windows-msvc --release --features win_no_gpu
           cargo build --target i686-pc-windows-msvc --release --features win_no_gpu
-          copy target/x86_64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-no-gpu-64.exe
+          copy target/x86_64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-no-gpu-x86_64.exe
           copy target/aarch64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-no-gpu-aarch64.exe
-          copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-no-gpu-32.exe
-          Compress-Archive -Path tmp_build/roast-win-64.exe -Destination out/roast-win-64.exe.zip
+          copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-no-gpu-i686.exe
+          Compress-Archive -Path tmp_build/roast-win-x86_64.exe -Destination out/roast-win-x86_64.exe.zip
           Compress-Archive -Path tmp_build/roast-win-aarch64.exe -Destination out/roast-win-aarch64.exe.zip
-          Compress-Archive -Path tmp_build/roast-win-32.exe -Destination out/roast-win-32.exe.zip
-          Compress-Archive -Path tmp_build/roast-win-console-64.exe -Destination out/roast-win-console-64.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-i686.exe -Destination out/roast-win-i686.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-console-x86_64.exe -Destination out/roast-win-console-x86_64.exe.zip
           Compress-Archive -Path tmp_build/roast-win-console-aarch64.exe -Destination out/roast-win-console-aarch64.exe.zip
-          Compress-Archive -Path tmp_build/roast-win-console-32.exe -Destination out/roast-win-console-32.exe.zip
-          Compress-Archive -Path tmp_build/roast-win-no-gpu-64.exe -Destination out/roast-win-no-gpu-64.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-console-i686.exe -Destination out/roast-win-console-i686.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-no-gpu-x86_64.exe -Destination out/roast-win-no-gpu-x86_64.exe.zip
           Compress-Archive -Path tmp_build/roast-win-no-gpu-aarch64.exe -Destination out/roast-win-no-gpu-aarch64.exe.zip
-          Compress-Archive -Path tmp_build/roast-win-no-gpu-32.exe -Destination out/roast-win-no-gpu-32.exe.zip
+          Compress-Archive -Path tmp_build/roast-win-no-gpu-i686.exe -Destination out/roast-win-no-gpu-i686.exe.zip
       - name: Build MacOS (setup)
         if: matrix.os == 'macos-latest'
         run: |
