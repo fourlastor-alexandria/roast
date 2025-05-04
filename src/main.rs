@@ -53,6 +53,9 @@ fn start_jvm(
     use_zgc_if_supported: bool,
     use_main_as_context_class_loader: bool,
 ) {
+    #[cfg(target_os = "windows")]
+    set_env_vars();
+
     let mut args_builder = InitArgsBuilder::new()
         .version(JNIVersion::V8)
         .option(format!(
@@ -170,6 +173,18 @@ fn start_jvm(
         env.exception_clear()
             .expect("Failed to clear the exception")
     }
+}
+
+
+#[cfg(target_os = "windows")]
+fn set_env_vars() {
+    use std::env;
+    let key = "PATH";
+    let new_path = match env::var(key) {
+        Ok(val) => &format!("runtime\\bin;{val}"),
+        Err(_e) => "runtime\\bin",
+    };
+    env::set_var(key, new_path);
 }
 
 #[cfg(target_os = "windows")]
