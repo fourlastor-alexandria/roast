@@ -175,7 +175,7 @@ fn start_jvm(
     }
 }
 
-
+// Windows requires vcruntime140.dll which is in runtime/bin
 #[cfg(target_os = "windows")]
 fn set_env_vars() {
     use std::env;
