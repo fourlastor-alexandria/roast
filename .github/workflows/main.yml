@@ -71,8 +71,10 @@ jobs:
           mv target/x86_64-apple-darwin/release/roast ./roast-macos-x86_64
           mv target/aarch64-apple-darwin/release/roast ./roast-macos-aarch64
           chmod +x ./roast-macos-x86_64 ./roast-macos-aarch64
+          lipo -create -output roast-macos-universal ./roast-macos-x86_64 ./roast-macos-aarch64
           zip out/roast-macos-x86_64.zip ./roast-macos-x86_64
           zip out/roast-macos-aarch64.zip ./roast-macos-aarch64
+          zip out/roast-macos-universal.zip ./roast-macos-universal
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'
         run: |
