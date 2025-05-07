@@ -303,7 +303,14 @@ fn maybe_run_in_thread() {
     start_jvm_with_config(&config);
 }
 
+fn detect_architecture() {
+    if cfg!(target_arch = "aarch64") {
+        println!("Running on aarch64");
+    } else {
+        println!("Running on X64");
+    }
+}
+
 fn main() {
-    env_logger::init();
-    maybe_run_in_thread();
+    detect_architecture();
 }
