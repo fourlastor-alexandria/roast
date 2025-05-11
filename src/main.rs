@@ -37,7 +37,7 @@ static CLASS_PATH_DELIMITER: &str = ":";
 
 #[cfg(target_os = "windows")]
 const RUNTIME_LOCATION: [&str; 3] = ["runtime", "bin", "server"];
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(feature = "macos_universal")))]
 const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
 #[cfg(all(target_os = "macos", feature = "macos_universal"))]
 const RUNTIME_LOCATION_X64: [&str; 3] = ["runtime-x64", "lib", "server"];
