@@ -71,9 +71,29 @@ jobs:
           mv target/x86_64-apple-darwin/release/roast ./roast-macos-x86_64
           mv target/aarch64-apple-darwin/release/roast ./roast-macos-aarch64
           chmod +x ./roast-macos-x86_64 ./roast-macos-aarch64
-          lipo -create -output roast-macos-universal ./roast-macos-x86_64 ./roast-macos-aarch64
           zip out/roast-macos-x86_64.zip ./roast-macos-x86_64
           zip out/roast-macos-aarch64.zip ./roast-macos-aarch64
+      - name: Build MacOS universal (x86_64)
+        if: matrix.os == 'macos-latest'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '10.12'
+        run: |
+          cargo build --target x86_64-apple-darwin --release --features macos_universal
+      - name: Build MacOS universal (aarch64)
+        if: matrix.os == 'macos-latest'
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: |
+          cargo build --target aarch64-apple-darwin --release --features macos_universal
+      - name: Build MacOS universal (release)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p out
+          mv target/x86_64-apple-darwin/release/roast ./roast-macos-x86_64
+          mv target/aarch64-apple-darwin/release/roast ./roast-macos-aarch64
+          chmod +x ./roast-macos-x86_64 ./roast-macos-aarch64
+          lipo -create -output roast-macos-universal ./roast-macos-x86_64 ./roast-macos-aarch64
+          chmod +x ./roast-macos-universal
           zip out/roast-macos-universal.zip ./roast-macos-universal
       - name: Build Linux
         if: matrix.os == 'ubuntu-latest'

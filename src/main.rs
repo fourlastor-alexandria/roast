@@ -37,8 +37,12 @@ static CLASS_PATH_DELIMITER: &str = ":";
 
 #[cfg(target_os = "windows")]
 const RUNTIME_LOCATION: [&str; 3] = ["runtime", "bin", "server"];
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(feature = "macos_universal")))]
 const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
+#[cfg(all(target_os = "macos", feature = "macos_universal"))]
+const RUNTIME_LOCATION_X64: [&str; 3] = ["runtime-x64", "lib", "server"];
+#[cfg(all(target_os = "macos", feature = "macos_universal"))]
+const RUNTIME_LOCATION_AARCH64: [&str; 3] = ["runtime-aarch64", "lib", "server"];
 #[cfg(target_os = "linux")]
 const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
 
@@ -210,7 +214,7 @@ fn start_jvm_with_config(config: &Config) {
     let cli_args: Vec<String> = env::args().skip(1).collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
-    let runtime_location = current_location.join(RUNTIME_LOCATION.iter().collect::<PathBuf>());
+    let runtime_location = current_location.join(runtime_location().iter().collect::<PathBuf>());
 
     let class_path: Vec<String> = config
         .classPath
@@ -238,6 +242,24 @@ fn start_jvm_with_config(config: &Config) {
         use_zgc_if_supported,
         use_main_as_context_class_loader,
     );
+}
+
+#[cfg(all(target_os = "macos", feature = "macos_universal"))]
+fn runtime_location() -> [&'static str; 3] {
+    if cfg!(target_arch = "aarch64") {
+        RUNTIME_LOCATION_AARCH64
+    } else {
+        RUNTIME_LOCATION_X64
+    }
+}
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    all(target_os = "macos", not(feature = "macos_universal"))
+))]
+fn runtime_location() -> [&'static str; 3] {
+    RUNTIME_LOCATION
 }
 
 #[cfg(target_os = "macos")]

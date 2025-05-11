@@ -14,6 +14,8 @@ In addition to launching the JVM, it hints Windows systems with hybrid GPU setup
 
 A JDK/JRE, or a minimized image from `jlink`, in the `runtime` folder.
 
+If you're using the macOS universal variant, the runtime folder will be `runtime-aarch64` and `runtime-x64` for aarch64 and x64 respectively. 
+
 ### JSON config file
 
 The config file must be in the `app` folder, and must have the same name as the executable, so for example, if your executable is `game` (or `game.exe`), the config file will be `app/game.json`.
