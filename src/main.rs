@@ -189,10 +189,10 @@ fn is_zgc_supported() -> bool {
     return true;
 }
 
-fn read_config(path: PathBuf) -> Option<Config> {
-    return fs::read_to_string(path.clone())
-        .ok()
-        .and_then(|it| serde_json::from_str(&it).ok());
+fn read_config(path: PathBuf) -> Result<Config, Box<dyn std::error::Error>> {
+    let content = fs::read_to_string(path)?;
+    let config = serde_json::from_str(&content)?;
+    Ok(config)
 }
 
 fn read_config_from_disk() -> Config {
@@ -202,12 +202,9 @@ fn read_config_from_disk() -> Config {
         .join(APP_FOLDER)
         .join(current_exe.with_extension("json").file_name().unwrap());
 
-    read_config(config_file_path).expect(&format!(
-        "Unable to read config file {}/{}/{}",
-        current_location.to_string_lossy(),
-        APP_FOLDER,
-        current_exe.with_extension("json").to_string_lossy()
-    ))
+    read_config(config_file_path).unwrap_or_else(|err| {
+        panic!("Failed to load config file {}: {}", current_exe.with_extension("json").to_string_lossy(), err);
+    })
 }
 
 fn start_jvm_with_config(config: &Config) {
