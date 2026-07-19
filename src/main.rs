@@ -2,7 +2,7 @@
 use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
 use std::{
-    env, fs,
+    env, fs, io,
     path::{Path, PathBuf},
 };
 
@@ -48,8 +48,70 @@ const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
 
 const APP_FOLDER: &str = "app";
 
+struct WorkingDirectoryGuard {
+    original: PathBuf,
+    restored: bool,
+}
+
+struct JvmDirectories<'a> {
+    runtime: &'a Path,
+    bootstrap: &'a Path,
+    application: &'a Path,
+}
+
+impl WorkingDirectoryGuard {
+    fn enter(path: &Path) -> io::Result<Self> {
+        let original = env::current_dir()?;
+        env::set_current_dir(path)?;
+        Ok(Self {
+            original,
+            restored: false,
+        })
+    }
+
+    fn restore(&mut self) -> io::Result<()> {
+        if !self.restored {
+            env::set_current_dir(&self.original)?;
+            self.restored = true;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for WorkingDirectoryGuard {
+    fn drop(&mut self) {
+        if !self.restored {
+            let _ = env::set_current_dir(&self.original);
+        }
+    }
+}
+
+fn build_vm_options(
+    class_path: &[String],
+    vm_args: &[String],
+    application_working_directory: &Path,
+    use_zgc_if_supported: bool,
+) -> Vec<String> {
+    let mut options = vec![format!(
+        "-Djava.class.path={}",
+        class_path.join(CLASS_PATH_DELIMITER)
+    )];
+    options.extend(vm_args.iter().cloned());
+
+    if use_zgc_if_supported && is_zgc_supported() {
+        options.push("-XX:+UnlockExperimentalVMOptions".to_string());
+        options.push("-XX:+UseZGC".to_string());
+    }
+
+    let user_dir = application_working_directory
+        .to_str()
+        .expect("Caller working directory must be valid Unicode");
+    options.push(format!("-Duser.dir={user_dir}"));
+    options
+}
+
 fn start_jvm(
-    runtime_location: &Path,
+    directories: JvmDirectories<'_>,
     class_path: Vec<String>,
     main_class_name: &str,
     vm_args: Vec<String>,
@@ -57,31 +119,33 @@ fn start_jvm(
     use_zgc_if_supported: bool,
     use_main_as_context_class_loader: bool,
 ) {
-    let mut args_builder = InitArgsBuilder::new()
-        .version(JNIVersion::V8)
-        .option(format!(
-            "-Djava.class.path={}",
-            class_path.join(CLASS_PATH_DELIMITER)
-        ));
-
-    for arg in vm_args {
-        args_builder = args_builder.option(arg);
-    }
-
-    if use_zgc_if_supported && is_zgc_supported() {
-        args_builder = args_builder
-            .option("-XX:+UnlockExperimentalVMOptions")
-            .option("-XX:+UseZGC")
+    let mut args_builder = InitArgsBuilder::new().version(JNIVersion::V8);
+    for option in build_vm_options(
+        &class_path,
+        &vm_args,
+        directories.application,
+        use_zgc_if_supported,
+    ) {
+        args_builder = args_builder.option(option);
     }
 
     // Build the VM properties
     let jvm_args = args_builder.build().expect("Failed to buid VM properties");
 
-    // Create a new VM
+    // HotSpot validates relative AOT classpath entries against the native working directory used
+    // during VM creation. Bootstrap from the launcher directory, then restore the caller before
+    // any application class is loaded.
+    let mut working_directory = WorkingDirectoryGuard::enter(directories.bootstrap)
+        .expect("Failed to switch to launcher working directory");
     let jvm = JavaVM::with_libjvm(jvm_args, || {
-        Ok(runtime_location.join(java_locator::get_jvm_dyn_lib_file_name()))
+        Ok(directories
+            .runtime
+            .join(java_locator::get_jvm_dyn_lib_file_name()))
     })
     .expect("Failed to create a new JavaVM");
+    working_directory
+        .restore()
+        .expect("Failed to restore caller working directory");
 
     let mut env = jvm
         .attach_current_thread()
@@ -203,11 +267,17 @@ fn read_config_from_disk() -> Config {
         .join(current_exe.with_extension("json").file_name().unwrap());
 
     read_config(config_file_path).unwrap_or_else(|err| {
-        panic!("Failed to load config file {}: {}", current_exe.with_extension("json").to_string_lossy(), err);
+        panic!(
+            "Failed to load config file {}: {}",
+            current_exe.with_extension("json").to_string_lossy(),
+            err
+        );
     })
 }
 
 fn start_jvm_with_config(config: &Config) {
+    let application_working_directory =
+        env::current_dir().expect("Failed to get caller working directory");
     let cli_args: Vec<String> = env::args().skip(1).collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
@@ -231,7 +301,11 @@ fn start_jvm_with_config(config: &Config) {
     let use_main_as_context_class_loader = config.useMainAsContextClassLoader.unwrap_or(false);
 
     start_jvm(
-        &runtime_location,
+        JvmDirectories {
+            runtime: &runtime_location,
+            bootstrap: current_location,
+            application: &application_working_directory,
+        },
         class_path,
         main_class,
         vm_args,
@@ -325,4 +399,102 @@ fn maybe_run_in_thread() {
 fn main() {
     env_logger::init();
     maybe_run_in_thread();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_vm_options, WorkingDirectoryGuard};
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+        sync::Mutex,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    static WORKING_DIRECTORY_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn switches_to_launcher_for_bootstrap_and_restores_caller() {
+        let _lock = WORKING_DIRECTORY_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let fixture = WorkingDirectoryFixture::new();
+        env::set_current_dir(&fixture.caller).unwrap();
+
+        let mut guard = WorkingDirectoryGuard::enter(&fixture.launcher).unwrap();
+        assert_eq!(fixture.launcher, env::current_dir().unwrap());
+
+        guard.restore().unwrap();
+        assert_eq!(fixture.caller, env::current_dir().unwrap());
+    }
+
+    #[test]
+    fn restores_caller_when_jvm_bootstrap_unwinds() {
+        let _lock = WORKING_DIRECTORY_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let fixture = WorkingDirectoryFixture::new();
+        env::set_current_dir(&fixture.caller).unwrap();
+
+        {
+            let _guard = WorkingDirectoryGuard::enter(&fixture.launcher).unwrap();
+            assert_eq!(fixture.launcher, env::current_dir().unwrap());
+        }
+
+        assert_eq!(fixture.caller, env::current_dir().unwrap());
+    }
+
+    #[test]
+    fn caller_user_dir_is_the_final_vm_option() {
+        let caller = Path::new("caller with spaces");
+        let options = build_vm_options(
+            &["/install/app/app.jar".to_string()],
+            &["-Duser.dir=/wrong".to_string(), "-Xmx1G".to_string()],
+            caller,
+            false,
+        );
+
+        assert_eq!(
+            Some("-Duser.dir=caller with spaces"),
+            options.last().map(String::as_str)
+        );
+    }
+
+    struct WorkingDirectoryFixture {
+        original: PathBuf,
+        root: PathBuf,
+        caller: PathBuf,
+        launcher: PathBuf,
+    }
+
+    impl WorkingDirectoryFixture {
+        fn new() -> Self {
+            let original = env::current_dir().unwrap();
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = env::temp_dir().join(format!("roast cwd {unique} ø"));
+            let caller = root.join("caller");
+            let launcher = root.join("launcher");
+            fs::create_dir_all(&caller).unwrap();
+            fs::create_dir_all(&launcher).unwrap();
+            let root = root.canonicalize().unwrap();
+            let caller = root.join("caller");
+            let launcher = root.join("launcher");
+            Self {
+                original,
+                root,
+                caller,
+                launcher,
+            }
+        }
+    }
+
+    impl Drop for WorkingDirectoryFixture {
+        fn drop(&mut self) {
+            env::set_current_dir(&self.original).unwrap();
+            fs::remove_dir_all(&self.root).unwrap();
+        }
+    }
 }

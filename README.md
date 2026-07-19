@@ -6,6 +6,12 @@ A JVM starter in Rust
 
 In addition to launching the JVM, it hints Windows systems with hybrid GPU setups ([NVIDIA Optimus](https://docs.nvidia.com/gameworks/content/technologies/desktop/optimus.htm), [AMD PowerXpress](https://gpuopen.com/learn/amdpowerxpressrequesthighperformance/)) to use the discrete GPU.
 
+Roast may be launched from any Unicode-representable working directory. It initializes the JVM from
+the installation directory so relative AOT classpaths remain valid, then restores the caller
+directory before Java application code runs. Both the native process working directory and Java's
+`user.dir` therefore match the directory from which Roast was invoked. The launcher reserves
+`-Duser.dir` to enforce this contract and overrides any value supplied in `vmArgs`.
+
 ## API
 
 `roast` will look for the following in its containing folder
