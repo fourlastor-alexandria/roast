@@ -1,4 +1,5 @@
 fn main() {
+    static_vcruntime::metabuild();
     #[cfg(target_os = "windows")]
     enable_gpu_flags();
 }

@@ -47,7 +47,7 @@ jobs:
           Get-ChildItem tmp_build/*.exe | ForEach-Object {
             $imports = & $dumpbin /DEPENDENTS $_.FullName
             if ($LASTEXITCODE -ne 0) { throw "dumpbin failed for $($_.Name)" }
-            $forbidden = $imports | Select-String -Pattern '(?i)\b(?:VCRUNTIME140(?:_1)?D?|MSVCP140(?:_\d+)?D?)\.dll\b'
+            $forbidden = $imports | Select-String -Pattern '(?i)\b(?:VCRUNTIME|MSVCP)[A-Z0-9_]*\.dll\b'
             if ($forbidden) { throw "$($_.Name) imports a redistributable MSVC runtime: $($forbidden.Line.Trim())" }
           }
           Compress-Archive -Path tmp_build/roast-win-x86_64.exe -Destination out/roast-win-x86_64.exe.zip
