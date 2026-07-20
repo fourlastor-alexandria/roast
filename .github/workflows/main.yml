@@ -2,6 +2,9 @@ name: Distribution Builds
 
 on:
   push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   # Manual dispatch for testing
   workflow_dispatch:
 
