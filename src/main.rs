@@ -1,8 +1,11 @@
 #![cfg_attr(not(feature = "win_console"), windows_subsystem = "windows")]
+mod bootstrap;
+
+use bootstrap::{build_vm_options, WorkingDirectoryGuard};
 use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
 use std::{
-    env, fs, io,
+    env, fs,
     path::{Path, PathBuf},
 };
 
@@ -31,11 +34,6 @@ pub static NvOptimusEnablement: std::os::raw::c_ulong = 0x00000001;
 pub static AmdPowerXpressRequestHighPerformance: std::os::raw::c_int = 1;
 
 #[cfg(target_os = "windows")]
-static CLASS_PATH_DELIMITER: &str = ";";
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-static CLASS_PATH_DELIMITER: &str = ":";
-
-#[cfg(target_os = "windows")]
 const RUNTIME_LOCATION: [&str; 3] = ["runtime", "bin", "server"];
 #[cfg(all(target_os = "macos", not(feature = "macos_universal")))]
 const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
@@ -48,66 +46,10 @@ const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
 
 const APP_FOLDER: &str = "app";
 
-struct WorkingDirectoryGuard {
-    original: PathBuf,
-    restored: bool,
-}
-
 struct JvmDirectories<'a> {
     runtime: &'a Path,
     bootstrap: &'a Path,
     application: &'a Path,
-}
-
-impl WorkingDirectoryGuard {
-    fn enter(path: &Path) -> io::Result<Self> {
-        let original = env::current_dir()?;
-        env::set_current_dir(path)?;
-        Ok(Self {
-            original,
-            restored: false,
-        })
-    }
-
-    fn restore(&mut self) -> io::Result<()> {
-        if !self.restored {
-            env::set_current_dir(&self.original)?;
-            self.restored = true;
-        }
-        Ok(())
-    }
-}
-
-impl Drop for WorkingDirectoryGuard {
-    fn drop(&mut self) {
-        if !self.restored {
-            let _ = env::set_current_dir(&self.original);
-        }
-    }
-}
-
-fn build_vm_options(
-    class_path: &[String],
-    vm_args: &[String],
-    application_working_directory: &Path,
-    use_zgc_if_supported: bool,
-) -> Vec<String> {
-    let mut options = vec![format!(
-        "-Djava.class.path={}",
-        class_path.join(CLASS_PATH_DELIMITER)
-    )];
-    options.extend(vm_args.iter().cloned());
-
-    if use_zgc_if_supported && is_zgc_supported() {
-        options.push("-XX:+UnlockExperimentalVMOptions".to_string());
-        options.push("-XX:+UseZGC".to_string());
-    }
-
-    let user_dir = application_working_directory
-        .to_str()
-        .expect("Caller working directory must be valid Unicode");
-    options.push(format!("-Duser.dir={user_dir}"));
-    options
 }
 
 fn start_jvm(
@@ -238,19 +180,6 @@ fn start_jvm(
         env.exception_clear()
             .expect("Failed to clear the exception")
     }
-}
-
-#[cfg(target_os = "windows")]
-fn is_zgc_supported() -> bool {
-    // Windows 10 1803 is required for ZGC, see https://wiki.openjdk.java.net/display/zgc/Main#Main-SupportedPlatforms
-    // Windows 10 1803 is build 17134.
-    use windows_version::OsVersion;
-    return OsVersion::current() >= OsVersion::new(10, 0, 0, 17134);
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn is_zgc_supported() -> bool {
-    return true;
 }
 
 fn read_config(path: PathBuf) -> Result<Config, Box<dyn std::error::Error>> {
@@ -399,102 +328,4 @@ fn maybe_run_in_thread() {
 fn main() {
     env_logger::init();
     maybe_run_in_thread();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{build_vm_options, WorkingDirectoryGuard};
-    use std::{
-        env, fs,
-        path::{Path, PathBuf},
-        sync::Mutex,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    static WORKING_DIRECTORY_LOCK: Mutex<()> = Mutex::new(());
-
-    #[test]
-    fn switches_to_launcher_for_bootstrap_and_restores_caller() {
-        let _lock = WORKING_DIRECTORY_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let fixture = WorkingDirectoryFixture::new();
-        env::set_current_dir(&fixture.caller).unwrap();
-
-        let mut guard = WorkingDirectoryGuard::enter(&fixture.launcher).unwrap();
-        assert_eq!(fixture.launcher, env::current_dir().unwrap());
-
-        guard.restore().unwrap();
-        assert_eq!(fixture.caller, env::current_dir().unwrap());
-    }
-
-    #[test]
-    fn restores_caller_when_jvm_bootstrap_unwinds() {
-        let _lock = WORKING_DIRECTORY_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let fixture = WorkingDirectoryFixture::new();
-        env::set_current_dir(&fixture.caller).unwrap();
-
-        {
-            let _guard = WorkingDirectoryGuard::enter(&fixture.launcher).unwrap();
-            assert_eq!(fixture.launcher, env::current_dir().unwrap());
-        }
-
-        assert_eq!(fixture.caller, env::current_dir().unwrap());
-    }
-
-    #[test]
-    fn caller_user_dir_is_the_final_vm_option() {
-        let caller = Path::new("caller with spaces");
-        let options = build_vm_options(
-            &["/install/app/app.jar".to_string()],
-            &["-Duser.dir=/wrong".to_string(), "-Xmx1G".to_string()],
-            caller,
-            false,
-        );
-
-        assert_eq!(
-            Some("-Duser.dir=caller with spaces"),
-            options.last().map(String::as_str)
-        );
-    }
-
-    struct WorkingDirectoryFixture {
-        original: PathBuf,
-        root: PathBuf,
-        caller: PathBuf,
-        launcher: PathBuf,
-    }
-
-    impl WorkingDirectoryFixture {
-        fn new() -> Self {
-            let original = env::current_dir().unwrap();
-            let unique = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let root = env::temp_dir().join(format!("roast cwd {unique} ø"));
-            let caller = root.join("caller");
-            let launcher = root.join("launcher");
-            fs::create_dir_all(&caller).unwrap();
-            fs::create_dir_all(&launcher).unwrap();
-            let root = root.canonicalize().unwrap();
-            let caller = root.join("caller");
-            let launcher = root.join("launcher");
-            Self {
-                original,
-                root,
-                caller,
-                launcher,
-            }
-        }
-    }
-
-    impl Drop for WorkingDirectoryFixture {
-        fn drop(&mut self) {
-            env::set_current_dir(&self.original).unwrap();
-            fs::remove_dir_all(&self.root).unwrap();
-        }
-    }
 }
