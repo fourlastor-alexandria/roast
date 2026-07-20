@@ -1,4 +1,7 @@
 #![cfg_attr(not(feature = "win_console"), windows_subsystem = "windows")]
+mod bootstrap;
+
+use bootstrap::{build_vm_options, WorkingDirectoryGuard};
 use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
 use serde::Deserialize;
 use std::{
@@ -31,11 +34,6 @@ pub static NvOptimusEnablement: std::os::raw::c_ulong = 0x00000001;
 pub static AmdPowerXpressRequestHighPerformance: std::os::raw::c_int = 1;
 
 #[cfg(target_os = "windows")]
-static CLASS_PATH_DELIMITER: &str = ";";
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-static CLASS_PATH_DELIMITER: &str = ":";
-
-#[cfg(target_os = "windows")]
 const RUNTIME_LOCATION: [&str; 3] = ["runtime", "bin", "server"];
 #[cfg(all(target_os = "macos", not(feature = "macos_universal")))]
 const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
@@ -48,8 +46,14 @@ const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
 
 const APP_FOLDER: &str = "app";
 
+struct JvmDirectories<'a> {
+    runtime: &'a Path,
+    bootstrap: &'a Path,
+    application: &'a Path,
+}
+
 fn start_jvm(
-    runtime_location: &Path,
+    directories: JvmDirectories<'_>,
     class_path: Vec<String>,
     main_class_name: &str,
     vm_args: Vec<String>,
@@ -57,31 +61,33 @@ fn start_jvm(
     use_zgc_if_supported: bool,
     use_main_as_context_class_loader: bool,
 ) {
-    let mut args_builder = InitArgsBuilder::new()
-        .version(JNIVersion::V8)
-        .option(format!(
-            "-Djava.class.path={}",
-            class_path.join(CLASS_PATH_DELIMITER)
-        ));
-
-    for arg in vm_args {
-        args_builder = args_builder.option(arg);
-    }
-
-    if use_zgc_if_supported && is_zgc_supported() {
-        args_builder = args_builder
-            .option("-XX:+UnlockExperimentalVMOptions")
-            .option("-XX:+UseZGC")
+    let mut args_builder = InitArgsBuilder::new().version(JNIVersion::V8);
+    for option in build_vm_options(
+        &class_path,
+        &vm_args,
+        directories.application,
+        use_zgc_if_supported,
+    ) {
+        args_builder = args_builder.option(option);
     }
 
     // Build the VM properties
     let jvm_args = args_builder.build().expect("Failed to buid VM properties");
 
-    // Create a new VM
+    // HotSpot validates relative AOT classpath entries against the native working directory used
+    // during VM creation. Bootstrap from the launcher directory, then restore the caller before
+    // any application class is loaded.
+    let mut working_directory = WorkingDirectoryGuard::enter(directories.bootstrap)
+        .expect("Failed to switch to launcher working directory");
     let jvm = JavaVM::with_libjvm(jvm_args, || {
-        Ok(runtime_location.join(java_locator::get_jvm_dyn_lib_file_name()))
+        Ok(directories
+            .runtime
+            .join(java_locator::get_jvm_dyn_lib_file_name()))
     })
     .expect("Failed to create a new JavaVM");
+    working_directory
+        .restore()
+        .expect("Failed to restore caller working directory");
 
     let mut env = jvm
         .attach_current_thread()
@@ -176,19 +182,6 @@ fn start_jvm(
     }
 }
 
-#[cfg(target_os = "windows")]
-fn is_zgc_supported() -> bool {
-    // Windows 10 1803 is required for ZGC, see https://wiki.openjdk.java.net/display/zgc/Main#Main-SupportedPlatforms
-    // Windows 10 1803 is build 17134.
-    use windows_version::OsVersion;
-    return OsVersion::current() >= OsVersion::new(10, 0, 0, 17134);
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn is_zgc_supported() -> bool {
-    return true;
-}
-
 fn read_config(path: PathBuf) -> Result<Config, Box<dyn std::error::Error>> {
     let content = fs::read_to_string(path)?;
     let config = serde_json::from_str(&content)?;
@@ -203,11 +196,17 @@ fn read_config_from_disk() -> Config {
         .join(current_exe.with_extension("json").file_name().unwrap());
 
     read_config(config_file_path).unwrap_or_else(|err| {
-        panic!("Failed to load config file {}: {}", current_exe.with_extension("json").to_string_lossy(), err);
+        panic!(
+            "Failed to load config file {}: {}",
+            current_exe.with_extension("json").to_string_lossy(),
+            err
+        );
     })
 }
 
 fn start_jvm_with_config(config: &Config) {
+    let application_working_directory =
+        env::current_dir().expect("Failed to get caller working directory");
     let cli_args: Vec<String> = env::args().skip(1).collect();
     let current_exe = env::current_exe().expect("Failed to get current exe location");
     let current_location = current_exe.parent().expect("Exe must be in a directory");
@@ -231,7 +230,11 @@ fn start_jvm_with_config(config: &Config) {
     let use_main_as_context_class_loader = config.useMainAsContextClassLoader.unwrap_or(false);
 
     start_jvm(
-        &runtime_location,
+        JvmDirectories {
+            runtime: &runtime_location,
+            bootstrap: current_location,
+            application: &application_working_directory,
+        },
         class_path,
         main_class,
         vm_args,

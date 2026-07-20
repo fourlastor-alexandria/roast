@@ -16,6 +16,10 @@ jobs:
         os: [ windows-latest, macos-latest, ubuntu-latest ]
     steps:
       - uses: actions/checkout@v4
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Test launcher behavior
+        run: cargo test --all-features
       - name: Build Windows
         if: matrix.os == 'windows-latest'
         run: |
