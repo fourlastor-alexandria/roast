@@ -46,6 +46,15 @@ jobs:
           copy target/x86_64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-no-gpu-x86_64.exe
           copy target/aarch64-pc-windows-msvc/release/roast.exe tmp_build/roast-win-no-gpu-aarch64.exe
           copy target/i686-pc-windows-msvc/release/roast.exe tmp_build/roast-win-no-gpu-i686.exe
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC/Tools/MSVC/**/bin/Hostx64/x64/dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw "dumpbin.exe not found" }
+          Get-ChildItem tmp_build/*.exe | ForEach-Object {
+            $imports = & $dumpbin /DEPENDENTS $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "dumpbin failed for $($_.Name)" }
+            $forbidden = $imports | Select-String -Pattern '(?i)\b(?:VCRUNTIME|MSVCP)[A-Z0-9_]*\.dll\b'
+            if ($forbidden) { throw "$($_.Name) imports a redistributable MSVC runtime: $($forbidden.Line.Trim())" }
+          }
           Compress-Archive -Path tmp_build/roast-win-x86_64.exe -Destination out/roast-win-x86_64.exe.zip
           Compress-Archive -Path tmp_build/roast-win-aarch64.exe -Destination out/roast-win-aarch64.exe.zip
           Compress-Archive -Path tmp_build/roast-win-i686.exe -Destination out/roast-win-i686.exe.zip
