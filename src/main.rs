@@ -74,6 +74,16 @@ fn start_jvm(
     // Build the VM properties
     let jvm_args = args_builder.build().expect("Failed to buid VM properties");
 
+    // Make sure Roast can find dll files which are in the runtime/bin folder
+    #[cfg(target_os = "windows")]
+    bootstrap::add_to_dll_search_path(
+        directories
+            .runtime
+            .parent()
+            .expect("Runtime server folder must be in a directory"),
+    )
+    .expect("Failed to add the runtime to the DLL search path");
+
     // HotSpot validates relative AOT classpath entries against the native working directory used
     // during VM creation. Bootstrap from the launcher directory, then restore the caller before
     // any application class is loaded.

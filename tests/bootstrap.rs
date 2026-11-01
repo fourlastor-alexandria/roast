@@ -58,6 +58,55 @@ fn caller_user_dir_is_the_final_vm_option() {
     );
 }
 
+#[cfg(target_os = "windows")]
+#[test]
+fn finds_dlls_by_name_in_the_added_directory() {
+    let _lock = WORKING_DIRECTORY_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let fixture = WorkingDirectoryFixture::new();
+    let system_root = env::var("SystemRoot").unwrap();
+    fs::copy(
+        Path::new(&system_root).join("System32/version.dll"),
+        fixture.launcher.join("roast-search-path-probe.dll"),
+    )
+    .unwrap();
+
+    assert!(!can_load_dll("roast-search-path-probe.dll"));
+
+    bootstrap::add_to_dll_search_path(&fixture.launcher).unwrap();
+
+    assert!(can_load_dll("roast-search-path-probe.dll"));
+}
+
+#[cfg(target_os = "windows")]
+fn can_load_dll(name: &str) -> bool {
+    use std::{
+        ffi::{c_int, c_void, OsStr},
+        iter,
+        os::windows::ffi::OsStrExt,
+    };
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LoadLibraryW(name: *const u16) -> *mut c_void;
+        fn FreeLibrary(module: *mut c_void) -> c_int;
+    }
+
+    let name: Vec<u16> = OsStr::new(name)
+        .encode_wide()
+        .chain(iter::once(0))
+        .collect();
+    unsafe {
+        let module = LoadLibraryW(name.as_ptr());
+        if module.is_null() {
+            return false;
+        }
+        FreeLibrary(module);
+    }
+    true
+}
+
 struct WorkingDirectoryFixture {
     original: PathBuf,
     root: PathBuf,

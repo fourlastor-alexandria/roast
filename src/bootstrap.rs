@@ -65,6 +65,26 @@ pub(crate) fn build_vm_options(
 }
 
 #[cfg(target_os = "windows")]
+pub(crate) fn add_to_dll_search_path(directory: &Path) -> io::Result<()> {
+    use std::{ffi::c_int, iter, os::windows::ffi::OsStrExt};
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetDllDirectoryW(path: *const u16) -> c_int;
+    }
+
+    let path: Vec<u16> = directory
+        .as_os_str()
+        .encode_wide()
+        .chain(iter::once(0))
+        .collect();
+    if unsafe { SetDllDirectoryW(path.as_ptr()) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn is_zgc_supported() -> bool {
     // Windows 10 1803 is required for ZGC, see https://wiki.openjdk.java.net/display/zgc/Main#Main-SupportedPlatforms
     // Windows 10 1803 is build 17134.
