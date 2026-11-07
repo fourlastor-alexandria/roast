@@ -1,9 +1,16 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
-    time::{SystemTime, UNIX_EPOCH},
+    process::{Command, Output, Stdio},
+    sync::{Mutex, MutexGuard},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+const EXIT_TIMEOUT: Duration = Duration::from_secs(60);
+
+// A launcher fails to start with "Text file busy" if another test forks while it's being copied
+static LAUNCHER_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn launches_jvm_from_install_and_restores_caller_directory() {
@@ -33,6 +40,99 @@ fn launches_jvm_from_install_and_restores_caller_directory() {
     assert!(!fixture.install.join("roast-native-marker.txt").exists());
 }
 
+#[test]
+fn finishes_worker_threads_and_shutdown_hooks_after_main_returns() {
+    for run_on_first_thread in [true, false] {
+        let fixture = LauncherFixture::exit_probe(run_on_first_thread);
+        let output = fixture.run_exit_probe("return");
+
+        assert_success("Roast fixture", &output);
+        assert_eq!("worker\nhook\n", fixture.exit_events());
+    }
+}
+
+#[test]
+fn exits_with_failure_when_main_throws() {
+    for run_on_first_thread in [true, false] {
+        let fixture = LauncherFixture::exit_probe(run_on_first_thread);
+        let output = fixture.run_exit_probe("throw");
+
+        assert_eq!(Some(1), output.status.code());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Exception in thread \"main\""), "{stderr}");
+        assert!(stderr.contains("thrown by the exit probe"), "{stderr}");
+        assert_eq!("hook\n", fixture.exit_events());
+    }
+}
+
+#[test]
+fn passes_uncaught_exceptions_to_the_default_handler_and_ignores_its_failures() {
+    for run_on_first_thread in [true, false] {
+        let fixture = LauncherFixture::exit_probe(run_on_first_thread);
+        let output = fixture.run_exit_probe("handler");
+
+        assert_eq!(Some(1), output.status.code());
+        assert_eq!("handler main\nhook\n", fixture.exit_events());
+    }
+}
+
+#[test]
+fn keeps_the_status_passed_to_system_exit() {
+    for run_on_first_thread in [true, false] {
+        let fixture = LauncherFixture::exit_probe(run_on_first_thread);
+        let output = fixture.run_exit_probe("exit");
+
+        assert_eq!(Some(3), output.status.code());
+        assert_eq!("hook\n", fixture.exit_events());
+    }
+}
+
+#[test]
+fn runs_main_on_the_main_thread_with_the_system_class_loader() {
+    for run_on_first_thread in [true, false] {
+        let fixture = LauncherFixture::exit_probe(run_on_first_thread);
+        let output = fixture.run_exit_probe("thread");
+
+        assert_success("Roast fixture", &output);
+        assert_eq!("main true\nhook\n", fixture.exit_events());
+    }
+}
+
+#[test]
+fn exits_with_failure_when_the_main_class_is_missing() {
+    for run_on_first_thread in [true, false] {
+        let fixture = LauncherFixture::exit_probe_with_main("Missing", run_on_first_thread);
+        let output = fixture.run_exit_probe("return");
+
+        assert_eq!(Some(1), output.status.code());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Missing"));
+    }
+}
+
+#[test]
+fn exits_with_failure_when_the_main_method_is_missing() {
+    for run_on_first_thread in [true, false] {
+        let fixture = LauncherFixture::exit_probe_with_main("NoMain", run_on_first_thread);
+        let output = fixture.run_exit_probe("return");
+
+        assert_eq!(Some(1), output.status.code());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Method not found: main"));
+    }
+}
+
+#[test]
+fn reports_a_main_class_that_fails_to_initialize_as_uncaught() {
+    for run_on_first_thread in [true, false] {
+        let fixture = LauncherFixture::exit_probe_with_main("BrokenInit", run_on_first_thread);
+        let output = fixture.run_exit_probe("return");
+
+        assert_eq!(Some(1), output.status.code());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Exception in thread \"main\""), "{stderr}");
+        assert!(stderr.contains("thrown by the initializer"), "{stderr}");
+    }
+}
+
 fn canonical_path(path: &str) -> PathBuf {
     Path::new(path)
         .canonicalize()
@@ -50,6 +150,7 @@ fn assert_success(label: &str, output: &Output) {
 }
 
 struct LauncherFixture {
+    _lock: MutexGuard<'static, ()>,
     original: PathBuf,
     root: PathBuf,
     install: PathBuf,
@@ -59,6 +160,28 @@ struct LauncherFixture {
 
 impl LauncherFixture {
     fn new() -> Self {
+        Self::with_probe("WorkingDirectoryProbe", JAVA_PROBE, ROAST_CONFIG)
+    }
+
+    fn exit_probe(run_on_first_thread: bool) -> Self {
+        Self::exit_probe_with_main("ExitProbe", run_on_first_thread)
+    }
+
+    fn exit_probe_with_main(main_class: &str, run_on_first_thread: bool) -> Self {
+        let config = format!(
+            r#"{{
+  "classPath": ["app/classes"],
+  "mainClass": "roast.probe.{main_class}",
+  "runOnFirstThread": {run_on_first_thread}
+}}"#
+        );
+        Self::with_probe("ExitProbe", EXIT_PROBE, &config)
+    }
+
+    fn with_probe(name: &str, probe: &str, roast_config: &str) -> Self {
+        let lock = LAUNCHER_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let original = env::current_dir().unwrap();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -71,8 +194,8 @@ impl LauncherFixture {
         fs::create_dir_all(&classes).unwrap();
         fs::create_dir_all(&caller).unwrap();
 
-        let source = root.join("WorkingDirectoryProbe.java");
-        fs::write(&source, JAVA_PROBE).unwrap();
+        let source = root.join(format!("{name}.java"));
+        fs::write(&source, probe).unwrap();
         let javac = Command::new("javac")
             .arg("-d")
             .arg(&classes)
@@ -104,16 +227,41 @@ impl LauncherFixture {
                 .file_name()
                 .unwrap(),
         );
-        fs::write(config, ROAST_CONFIG).unwrap();
+        fs::write(config, roast_config).unwrap();
 
         let root = root.canonicalize().unwrap();
         Self {
+            _lock: lock,
             original,
             install: root.join("install"),
             caller: root.join("caller"),
             launcher: root.join("install").join(launcher_name),
             root,
         }
+    }
+
+    fn run_exit_probe(&self, mode: &str) -> Output {
+        let mut child = Command::new(&self.launcher)
+            .arg(mode)
+            .current_dir(&self.caller)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("failed to launch Roast fixture");
+        let started = Instant::now();
+        while child.try_wait().unwrap().is_none() {
+            if started.elapsed() > EXIT_TIMEOUT {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("Roast fixture was still running after {mode}");
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        child.wait_with_output().unwrap()
+    }
+
+    fn exit_events(&self) -> String {
+        fs::read_to_string(self.caller.join("roast-exit-events.txt")).unwrap_or_default()
     }
 }
 
@@ -168,6 +316,73 @@ const ROAST_CONFIG: &str = r#"{
   "vmArgs": ["-Duser.dir=/wrong", "-Xlog:os=info:file=roast-bootstrap.log"],
   "runOnFirstThread": true
 }"#;
+
+const EXIT_PROBE: &str = r#"
+package roast.probe;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+
+public final class ExitProbe {
+    public static void main(String[] args) {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> record("hook")));
+        if (args[0].equals("throw")) {
+            throw new IllegalStateException("thrown by the exit probe");
+        }
+        if (args[0].equals("handler")) {
+            Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+                record("handler " + thread.getName());
+                throw new IllegalStateException("thrown by the handler");
+            });
+            throw new IllegalStateException("thrown by the exit probe");
+        }
+        if (args[0].equals("exit")) {
+            System.exit(3);
+        }
+        if (args[0].equals("thread")) {
+            ClassLoader loader = Thread.currentThread().getContextClassLoader();
+            record(Thread.currentThread().getName() + " " + (loader == ClassLoader.getSystemClassLoader()));
+            return;
+        }
+        new Thread(() -> {
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException error) {
+                throw new IllegalStateException(error);
+            }
+            record("worker");
+        }).start();
+    }
+
+    private static void record(String event) {
+        try {
+            Files.writeString(
+                Path.of("roast-exit-events.txt"),
+                event + "\n",
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND
+            );
+        } catch (IOException error) {
+            throw new UncheckedIOException(error);
+        }
+    }
+}
+
+final class NoMain {}
+
+final class BrokenInit {
+    static {
+        if (true) {
+            throw new IllegalStateException("thrown by the initializer");
+        }
+    }
+
+    public static void main(String[] args) {}
+}
+"#;
 
 const JAVA_PROBE: &str = r#"
 import java.nio.charset.StandardCharsets;
