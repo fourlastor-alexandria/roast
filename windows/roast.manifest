@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <!--
+    Makes UTF-8 the code page of the process, on Windows 10 1903 and later. JVM options go through
+    the JNI invocation API in that code page, and HotSpot uses it to find java.home and to load
+    native libraries, so without this a path with characters outside the system code page, such
+    as Cyrillic on a Western European Windows, can't reach the JVM. The JDK only reads options as
+    UTF-8 from 11.0.17, 17.0.5 and 19 (JDK-8272352). Older Windows versions ignore this setting.
+  -->
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>
