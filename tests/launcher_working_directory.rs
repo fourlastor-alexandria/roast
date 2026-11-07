@@ -187,27 +187,32 @@ impl LauncherFixture {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = env::temp_dir().join(format!("roast launcher {unique} ø"));
+        // Ж is missing from Western code pages and ø from Cyrillic ones, so on those Windows systems
+        // these paths only reach the JVM through the UTF-8 code page that roast's manifest selects
+        let root = env::temp_dir().join(format!("roast launcher {unique} ø Ж"));
         let install = root.join("install");
         let caller = root.join("caller");
         let classes = install.join("app/classes");
         fs::create_dir_all(&classes).unwrap();
         fs::create_dir_all(&caller).unwrap();
 
+        // The JDK tools read their arguments in the system code page, so they get relative paths
         let source = root.join(format!("{name}.java"));
         fs::write(&source, probe).unwrap();
         let javac = Command::new("javac")
+            .current_dir(&root)
             .arg("-d")
-            .arg(&classes)
-            .arg(&source)
+            .arg(classes.strip_prefix(&root).unwrap())
+            .arg(source.strip_prefix(&root).unwrap())
             .output()
             .expect("javac must be installed for the launcher integration test");
         assert_success("javac", &javac);
 
         let runtime = install.join(runtime_folder());
         let jlink = Command::new("jlink")
+            .current_dir(&root)
             .args(["--add-modules", "java.base", "--output"])
-            .arg(&runtime)
+            .arg(runtime.strip_prefix(&root).unwrap())
             .output()
             .expect("jlink must be installed for the launcher integration test");
         assert_success("jlink", &jlink);
