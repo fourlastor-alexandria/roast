@@ -1,7 +1,7 @@
 #[path = "../src/bootstrap.rs"]
 mod bootstrap;
 
-use bootstrap::{build_vm_options, WorkingDirectoryGuard};
+use bootstrap::{build_vm_options, launch_options, WorkingDirectoryGuard};
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -46,15 +46,41 @@ fn restores_caller_when_jvm_bootstrap_unwinds() {
 fn caller_user_dir_is_the_final_vm_option() {
     let caller = Path::new("caller with spaces");
     let options = build_vm_options(
-        &["/install/app/app.jar".to_string()],
-        &["-Duser.dir=/wrong".to_string(), "-Xmx1G".to_string()],
+        &launch_options(
+            &["/install/app/app.jar".to_string()],
+            &["-Duser.dir=/wrong".to_string(), "-Xmx1G".to_string()],
+            false,
+        ),
+        &["-XX:AOTCache=/cache/app.aot".to_string()],
         caller,
-        false,
     );
 
     assert_eq!(
         Some("-Duser.dir=caller with spaces"),
         options.last().map(String::as_str)
+    );
+}
+
+#[test]
+fn launcher_options_follow_the_launch_options() {
+    let options = build_vm_options(
+        &launch_options(
+            &["/install/app/app.jar".to_string()],
+            &["-Xmx1G".to_string()],
+            false,
+        ),
+        &["-XX:AOTCache=/cache/app.aot".to_string()],
+        Path::new("caller"),
+    );
+
+    assert_eq!(
+        vec![
+            "-Djava.class.path=/install/app/app.jar",
+            "-Xmx1G",
+            "-XX:AOTCache=/cache/app.aot",
+            "-Duser.dir=caller",
+        ],
+        options
     );
 }
 

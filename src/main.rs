@@ -1,7 +1,8 @@
 #![cfg_attr(not(feature = "win_console"), windows_subsystem = "windows")]
+mod aot;
 mod bootstrap;
 
-use bootstrap::{build_vm_options, WorkingDirectoryGuard};
+use bootstrap::{build_vm_options, launch_options, WorkingDirectoryGuard};
 use jni::{
     errors::Error,
     jni_sig, jni_str,
@@ -11,11 +12,7 @@ use jni::{
     Env, InitArgsBuilder, JNIVersion, JavaVM,
 };
 use serde::Deserialize;
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-    process,
-};
+use std::{env, fs, path::PathBuf, process};
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Clone)]
@@ -28,6 +25,7 @@ struct Config {
     useMainAsContextClassLoader: Option<bool>,
     #[cfg(target_os = "macos")]
     runOnFirstThread: Option<bool>,
+    aotCache: Option<aot::AotCacheConfig>,
 }
 
 // Picks discrete GPU on Windows, if possible
@@ -54,28 +52,64 @@ const RUNTIME_LOCATION: [&str; 3] = ["runtime", "lib", "server"];
 
 const APP_FOLDER: &str = "app";
 
-struct JvmDirectories<'a> {
-    runtime: &'a Path,
-    bootstrap: &'a Path,
-    application: &'a Path,
+/// Where the runtime and the application are, and the options that decide how the JVM is set up
+struct Launch {
+    executable: PathBuf,
+    install: PathBuf,
+    runtime_home: PathBuf,
+    libjvm: PathBuf,
+    class_path: Vec<String>,
+    options: Vec<String>,
 }
 
-fn start_jvm(
-    directories: JvmDirectories<'_>,
-    class_path: Vec<String>,
-    main_class_name: &str,
-    vm_args: Vec<String>,
-    args: Vec<String>,
-    use_zgc_if_supported: bool,
-    use_main_as_context_class_loader: bool,
-) {
+impl Launch {
+    fn new(config: &Config) -> Self {
+        let executable = env::current_exe().expect("Failed to get current exe location");
+        let install = executable
+            .parent()
+            .expect("Exe must be in a directory")
+            .to_path_buf();
+        let [home, lib, server] = runtime_location();
+        let runtime_home = install.join(home);
+        let libjvm = runtime_home
+            .join(lib)
+            .join(server)
+            .join(java_locator::get_jvm_dyn_lib_file_name());
+        let class_path: Vec<String> = config
+            .classPath
+            .iter()
+            .map(|it| install.join(it).into_os_string().into_string().unwrap())
+            .collect();
+        let options = launch_options(
+            &class_path,
+            config.vmArgs.as_deref().unwrap_or_default(),
+            config.useZgcIfSupportedOs.unwrap_or(false),
+        );
+        Self {
+            executable,
+            install,
+            runtime_home,
+            libjvm,
+            class_path,
+            options,
+        }
+    }
+
+    fn aot_inputs<'a>(&'a self, main_class: &'a str) -> aot::Inputs<'a> {
+        aot::Inputs {
+            executable: &self.executable,
+            runtime_home: &self.runtime_home,
+            libjvm: &self.libjvm,
+            class_path: &self.class_path,
+            options: &self.options,
+            main_class,
+        }
+    }
+}
+
+fn create_jvm(launch: &Launch, options: Vec<String>) -> JavaVM {
     let mut args_builder = InitArgsBuilder::new().version(JNIVersion::V1_8);
-    for option in build_vm_options(
-        &class_path,
-        &vm_args,
-        directories.application,
-        use_zgc_if_supported,
-    ) {
+    for option in options {
         args_builder = args_builder.option(option);
     }
 
@@ -85,9 +119,10 @@ fn start_jvm(
     // Make sure Roast can find dll files which are in the runtime/bin folder
     #[cfg(target_os = "windows")]
     bootstrap::add_to_dll_search_path(
-        directories
-            .runtime
+        launch
+            .libjvm
             .parent()
+            .and_then(std::path::Path::parent)
             .expect("Runtime server folder must be in a directory"),
     )
     .expect("Failed to add the runtime to the DLL search path");
@@ -95,17 +130,26 @@ fn start_jvm(
     // HotSpot validates relative AOT classpath entries against the native working directory used
     // during VM creation. Bootstrap from the launcher directory, then restore the caller before
     // any application class is loaded.
-    let mut working_directory = WorkingDirectoryGuard::enter(directories.bootstrap)
+    let mut working_directory = WorkingDirectoryGuard::enter(&launch.install)
         .expect("Failed to switch to launcher working directory");
-    let jvm = JavaVM::with_libjvm(jvm_args, || {
-        Ok(directories
-            .runtime
-            .join(java_locator::get_jvm_dyn_lib_file_name()))
-    })
-    .expect("Failed to create a new JavaVM");
+    let jvm = JavaVM::with_libjvm(jvm_args, || Ok(launch.libjvm.clone()))
+        .expect("Failed to create a new JavaVM");
     working_directory
         .restore()
         .expect("Failed to restore caller working directory");
+    jvm
+}
+
+fn start_jvm(
+    launch: &Launch,
+    options: Vec<String>,
+    main_class_name: &str,
+    args: Vec<String>,
+    use_main_as_context_class_loader: bool,
+    mut aot_plan: aot::Plan,
+) {
+    let jvm = create_jvm(launch, options);
+    aot_plan.started();
 
     let failed = jvm
         .attach_current_thread(|env| {
@@ -134,7 +178,19 @@ fn start_jvm(
     jvm.detach_current_thread()
         .expect("Failed to detach the main thread");
     unsafe { jvm.destroy() }.expect("Failed to destroy the JavaVM");
+    // The application has finished, so assembling what it recorded doesn't keep anyone waiting
+    aot_plan.finish();
     process::exit(i32::from(failed));
+}
+
+/// Runs in the copy of roast that assembles an AOT cache. In create mode the JVM writes the cache
+/// and ends the process itself, so creating it doesn't return.
+fn assemble_aot_cache(config: &Config, assembly: &aot::Assembly) -> ! {
+    let launch = Launch::new(config);
+    let caller = env::current_dir().expect("Failed to get caller working directory");
+    let options = build_vm_options(&launch.options, &assembly.vm_options(), &caller);
+    create_jvm(&launch, options);
+    process::exit(1);
 }
 
 fn call_main(
@@ -245,38 +301,26 @@ fn start_jvm_with_config(config: &Config) {
     let application_working_directory =
         env::current_dir().expect("Failed to get caller working directory");
     let cli_args: Vec<String> = env::args().skip(1).collect();
-    let current_exe = env::current_exe().expect("Failed to get current exe location");
-    let current_location = current_exe.parent().expect("Exe must be in a directory");
-    let runtime_location = current_location.join(runtime_location().iter().collect::<PathBuf>());
-
-    let class_path: Vec<String> = config
-        .classPath
-        .iter()
-        .map(|it| {
-            current_location
-                .join(it)
-                .into_os_string()
-                .into_string()
-                .unwrap()
-        })
-        .collect();
-    let vm_args = config.vmArgs.as_ref().unwrap_or(&Vec::new()).to_vec();
+    let launch = Launch::new(config);
     let config_args = config.args.as_ref().unwrap_or(&Vec::new()).to_vec();
-    let use_zgc_if_supported = config.useZgcIfSupportedOs.unwrap_or(false);
     let use_main_as_context_class_loader = config.useMainAsContextClassLoader.unwrap_or(false);
+    let aot_plan = aot::plan(
+        config.aotCache.as_ref(),
+        &launch.aot_inputs(&config.mainClass),
+    );
+    let options = build_vm_options(
+        &launch.options,
+        &aot_plan.vm_options(),
+        &application_working_directory,
+    );
 
     start_jvm(
-        JvmDirectories {
-            runtime: &runtime_location,
-            bootstrap: current_location,
-            application: &application_working_directory,
-        },
-        class_path,
+        &launch,
+        options,
         &config.mainClass,
-        vm_args,
         [config_args, cli_args].concat(),
-        use_zgc_if_supported,
         use_main_as_context_class_loader,
+        aot_plan,
     );
 }
 
@@ -363,5 +407,8 @@ fn maybe_run_in_thread() {
 
 fn main() {
     env_logger::init();
+    if let Some(assembly) = aot::requested_assembly() {
+        assemble_aot_cache(&read_config_from_disk(), &assembly);
+    }
     maybe_run_in_thread();
 }
