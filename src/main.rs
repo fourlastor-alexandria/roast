@@ -2,11 +2,19 @@
 mod bootstrap;
 
 use bootstrap::{build_vm_options, WorkingDirectoryGuard};
-use jni::{objects::JString, InitArgsBuilder, JNIVersion, JavaVM};
+use jni::{
+    errors::Error,
+    jni_sig, jni_str,
+    objects::{JObject, JThrowable},
+    refs::LoaderContext,
+    strings::JNIString,
+    Env, InitArgsBuilder, JNIVersion, JavaVM,
+};
 use serde::Deserialize;
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    process,
 };
 
 #[allow(non_snake_case)]
@@ -61,7 +69,7 @@ fn start_jvm(
     use_zgc_if_supported: bool,
     use_main_as_context_class_loader: bool,
 ) {
-    let mut args_builder = InitArgsBuilder::new().version(JNIVersion::V8);
+    let mut args_builder = InitArgsBuilder::new().version(JNIVersion::V1_8);
     for option in build_vm_options(
         &class_path,
         &vm_args,
@@ -99,97 +107,116 @@ fn start_jvm(
         .restore()
         .expect("Failed to restore caller working directory");
 
-    let mut env = jvm
-        .attach_current_thread()
-        .expect("Failed to attach the current thread");
+    let failed = jvm
+        .attach_current_thread(|env| {
+            match call_main(
+                env,
+                main_class_name,
+                &args,
+                use_main_as_context_class_loader,
+            ) {
+                Ok(()) => Ok(false),
+                Err(Error::JavaException) => report_pending_exception(env).map(|()| true),
+                Err(Error::ExceptionInInitializer {
+                    exception: Some(exception),
+                }) => report_uncaught_exception(env, &exception).map(|()| true),
+                Err(error) => {
+                    eprintln!("Failed to call main method: {error}");
+                    Ok(true)
+                }
+            }
+        })
+        .expect("Failed to call main method");
 
+    // The same way the java launcher finishes: destroying the VM waits for non-daemon threads and
+    // runs the shutdown hooks. The explicit exit is needed on macOS when the JVM isn't on the first
+    // thread, as that stays in its run loop.
+    jvm.detach_current_thread()
+        .expect("Failed to detach the main thread");
+    unsafe { jvm.destroy() }.expect("Failed to destroy the JavaVM");
+    process::exit(i32::from(failed));
+}
+
+fn call_main(
+    env: &mut Env,
+    main_class_name: &str,
+    args: &[String],
+    use_main_as_context_class_loader: bool,
+) -> Result<(), Error> {
+    // As the java launcher does, leave initializing the class to the call to main, so that a failure
+    // in a static initializer is reported as an uncaught exception
+    let main_class =
+        LoaderContext::None.load_class(env, JNIString::from(main_class_name), false)?;
     if use_main_as_context_class_loader {
-        // Class mainClass = MainClass.class;
-        let main_class = env
-            .find_class(main_class_name)
-            .expect("Failed to get main class");
-
         // ClassLoader loader = mainClass.getClassLoader()
         let class_loader = env
             .call_method(
-                main_class,
-                "getClassLoader",
-                "()Ljava/lang/ClassLoader;",
+                &main_class,
+                jni_str!("getClassLoader"),
+                jni_sig!("()Ljava/lang/ClassLoader;"),
                 &[],
-            )
-            .and_then(|it| it.l())
-            .expect("Failed to get class loader from main class");
-
-        // Thread thread = Thread.currentThread()
-        let current_thread = env
-            .call_static_method(
-                "java/lang/Thread",
-                "currentThread",
-                "()Ljava/lang/Thread;",
-                &[],
-            )
-            .and_then(|it| it.l())
-            .expect("Failed to get current thread");
-
-        // thread.setContextClassLoader(loader)
+            )?
+            .l()?;
+        // Thread.currentThread().setContextClassLoader(loader)
+        let current_thread = current_thread(env)?;
         env.call_method(
-            current_thread,
-            "setContextClassLoader",
-            "(Ljava/lang/ClassLoader;)V",
+            &current_thread,
+            jni_str!("setContextClassLoader"),
+            jni_sig!("(Ljava/lang/ClassLoader;)V"),
             &[(&class_loader).into()],
-        )
-        .expect("Failed to set class loader");
+        )?;
     }
 
-    let jstrings: Vec<JString> = args
-        .iter()
-        .map(|s| env.new_string(s)) // Convert to JString (maybe)
-        .filter_map(Result::ok)
-        .collect();
-
-    let initial_value = env.new_string("").unwrap();
-    let method_args = env
-        .new_object_array(args.len() as i32, "java/lang/String", initial_value)
-        .expect("Failed to create method arguments");
-
-    let mut i = 0;
-    for argument in jstrings {
-        let _ = env.set_object_array_element(&method_args, i, argument);
-        i = i + 1;
+    let initial_value = env.new_string("")?;
+    let method_args = env.new_object_array(
+        args.len() as i32,
+        jni_str!("java/lang/String"),
+        &initial_value,
+    )?;
+    for (index, argument) in args.iter().enumerate() {
+        let argument = env.new_string(argument)?;
+        method_args.set_element(env, index, &argument)?;
     }
+
     env.call_static_method(
-        main_class_name,
-        "main",
-        "([Ljava/lang/String;)V",
+        &main_class,
+        jni_str!("main"),
+        jni_sig!("([Ljava/lang/String;)V"),
         &[(&method_args).into()],
-    )
-    .expect("Failed to call main method");
+    )?;
+    Ok(())
+}
 
-    let exception_occurred = env
-        .exception_check()
-        .expect("Failed to check for exception");
-    if exception_occurred {
-        let exception = env
-            .exception_occurred()
-            .expect("Failed to retrieve occurred exception");
-        // Thread thread = Thread.currentThread();
-        let thread_class = env
-            .find_class("java/lang/Thread")
-            .expect("Failed to retrieve thread class");
-        let current_thread = env
-            .call_static_method(thread_class, "currentThread", "()Ljava/lang/Thread;", &[])
-            .expect("Failed to get current thread");
-        // call java.lang.Thread#dispatchUncaughtException(Throwable)
-        env.call_method(
-            current_thread.l().unwrap(),
-            "dispatchUncaughtException",
-            "(Ljava/lang/Throwable;)V",
-            &[(&exception).into()],
-        )
-        .expect("Failed to dispatch uncaught exception");
-        env.exception_clear()
-            .expect("Failed to clear the exception")
-    }
+fn current_thread<'local>(env: &mut Env<'local>) -> Result<JObject<'local>, Error> {
+    env.call_static_method(
+        jni_str!("java/lang/Thread"),
+        jni_str!("currentThread"),
+        jni_sig!("()Ljava/lang/Thread;"),
+        &[],
+    )?
+    .l()
+}
+
+// Detaching clears a pending exception before the JVM can see it, so it has to be reported here
+fn report_pending_exception(env: &mut Env) -> Result<(), Error> {
+    let Some(exception) = env.exception_occurred() else {
+        return Ok(());
+    };
+    env.exception_clear();
+    report_uncaught_exception(env, &exception)
+}
+
+// As the JVM does, this ignores anything thrown by the handler itself
+fn report_uncaught_exception(env: &mut Env, exception: &JThrowable) -> Result<(), Error> {
+    let current_thread = current_thread(env)?;
+    let _ = env.call_method(
+        &current_thread,
+        jni_str!("dispatchUncaughtException"),
+        jni_sig!("(Ljava/lang/Throwable;)V"),
+        &[exception.into()],
+    );
+    env.exception_clear();
+    Ok(())
 }
 
 fn read_config(path: PathBuf) -> Result<Config, Box<dyn std::error::Error>> {
@@ -233,7 +260,6 @@ fn start_jvm_with_config(config: &Config) {
                 .unwrap()
         })
         .collect();
-    let main_class = &config.mainClass.replace(".", "/");
     let vm_args = config.vmArgs.as_ref().unwrap_or(&Vec::new()).to_vec();
     let config_args = config.args.as_ref().unwrap_or(&Vec::new()).to_vec();
     let use_zgc_if_supported = config.useZgcIfSupportedOs.unwrap_or(false);
@@ -246,7 +272,7 @@ fn start_jvm_with_config(config: &Config) {
             application: &application_working_directory,
         },
         class_path,
-        main_class,
+        &config.mainClass,
         vm_args,
         [config_args, cli_args].concat(),
         use_zgc_if_supported,
