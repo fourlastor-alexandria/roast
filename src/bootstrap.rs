@@ -40,10 +40,10 @@ impl Drop for WorkingDirectoryGuard {
     }
 }
 
-pub(crate) fn build_vm_options(
+/// The options that decide how the JVM is set up, which are the same wherever it's launched from
+pub(crate) fn launch_options(
     class_path: &[String],
     vm_args: &[String],
-    application_working_directory: &Path,
     use_zgc_if_supported: bool,
 ) -> Vec<String> {
     let mut options = vec![format!(
@@ -56,12 +56,24 @@ pub(crate) fn build_vm_options(
         options.push("-XX:+UnlockExperimentalVMOptions".to_string());
         options.push("-XX:+UseZGC".to_string());
     }
+    options
+}
 
+/// The launch options, then the ones roast adds for this launch, and last the caller's directory
+pub(crate) fn build_vm_options(
+    launch_options: &[String],
+    launcher_options: &[String],
+    application_working_directory: &Path,
+) -> Vec<String> {
     let user_dir = application_working_directory
         .to_str()
         .expect("Caller working directory must be valid Unicode");
-    options.push(format!("-Duser.dir={user_dir}"));
-    options
+    launch_options
+        .iter()
+        .chain(launcher_options)
+        .cloned()
+        .chain([format!("-Duser.dir={user_dir}")])
+        .collect()
 }
 
 #[cfg(target_os = "windows")]

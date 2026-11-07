@@ -37,6 +37,7 @@ The config file supports the following options:
 - `vmArgs`: arguments to pass to the java runtime, defaults to an empty array
 - `args`: arguments to the pass to main method, defaults to an empty array
 - `runOnFirstThread`: MacOS only, wether to run the JVM on the main thread, defaults to false
+- `aotCache`: keeps an [AOT cache](#aot-cache) for each user so that the application starts faster, defaults to none
 
 For example:
 
@@ -48,6 +49,35 @@ For example:
   "useMainAsContextClassLoader": false,
   "vmArgs": ["-Xmx1G"],
   "args": ["cli", "args"],
-  "runOnFirstThread": true
+  "runOnFirstThread": true,
+  "aotCache": {
+    "id": "io.github.fourlastor.Game"
+  }
 }
 ```
+
+### AOT cache
+
+With `aotCache` set, roast keeps a [JEP 483](https://openjdk.org/jeps/483) AOT cache trained on real
+sessions of the application. It needs a Java 25 or later runtime and jar files on the class path.
+
+- The first launch runs in AOT record mode. When the application ends, roast starts a copy of itself
+  to assemble the cache, which takes about half a second on a fast machine. If the application ends
+  the process itself, with
+  `System.exit` for example, the next launch assembles it before starting.
+- Later launches start from the cache. A new runtime, a changed jar or different options get a new
+  cache, so updating the application records once more.
+- Caches live in `<cache folder>/<id>/aot`, where the cache folder is `$XDG_CACHE_HOME` or
+  `~/.cache` on Linux, `~/Library/Caches` on macOS and `%LOCALAPPDATA%` on Windows. `id` defaults
+  to the executable's name. The JVM's AOT messages go to a `.log` file there instead of the
+  application's output.
+- When the JVM refuses a cache, for example because the file is damaged, that launch runs without it
+  and the next one records again. After 3 recordings without a usable cache, roast stops trying until
+  the application or runtime changes.
+
+The cache must be trained with the same garbage collector it's used with. On Java 25, ZGC
+(`useZgcIfSupportedOs`) only gets part of the speedup, Java 26 and later get all of it.
+
+Roast leaves the cache alone when `vmArgs`, `JAVA_TOOL_OPTIONS` or `_JAVA_OPTIONS` already set AOT or
+CDS options, Java agents or module patching options. Set the environment variable `ROAST_AOT` to `0`,
+`false`, `off` or `no` to turn the cache off, and `ROAST_AOT_CACHE_DIR` to use another folder.
